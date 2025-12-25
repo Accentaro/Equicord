@@ -194,7 +194,7 @@ function MicLoopbackButton({ iconForeground, hideTooltips, nameplate }: UserArea
             tooltipText={hideTooltips ? void 0 : "Mic Test Loopback"}
             icon={<MicLoopbackIcon active={loopbackActive} className={iconForeground} />}
             role="switch"
-            aria-checked=!loopbackActive}
+            aria-checked={loopbackActive}
             redGlow={loopbackActive}
             plated={nameplate != null}
             onClick={handleToggle}
