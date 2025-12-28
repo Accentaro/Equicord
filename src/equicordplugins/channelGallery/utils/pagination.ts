@@ -17,7 +17,9 @@ export async function fetchMessagesChunk(args: {
     // Check if already aborted
     if (args.signal?.aborted) {
         clearTimeout(timeout);
-        throw new Error("AbortError");
+        const err = new Error("AbortError");
+        err.name = "AbortError";
+        throw err;
     }
 
     try {
@@ -34,15 +36,32 @@ export async function fetchMessagesChunk(args: {
         
         // Check if aborted after request
         if (args.signal?.aborted) {
-            throw new Error("AbortError");
+            const err = new Error("AbortError");
+            err.name = "AbortError";
+            throw err;
         }
 
-        const body = res?.body;
-        return Array.isArray(body) ? body : [];
+        // RestAPI.get returns the response body directly or an object with body property
+        const body = res?.body ?? res;
+        if (!Array.isArray(body)) {
+            console.warn("RestAPI.get returned non-array body:", body);
+            return [];
+        }
+        return body;
     } catch (e: unknown) {
         clearTimeout(timeout);
-        if (e instanceof Error && (e.name === "AbortError" || e.message === "AbortError")) throw e;
-        if (args.signal?.aborted) throw new Error("AbortError");
+        // Check for abort first
+        if (args.signal?.aborted) {
+            const err = new Error("AbortError");
+            err.name = "AbortError";
+            throw err;
+        }
+        if (e instanceof Error && (e.name === "AbortError" || e.message === "AbortError")) {
+            const err = new Error("AbortError");
+            err.name = "AbortError";
+            throw err;
+        }
+        console.error("fetchMessagesChunk error:", e);
         throw new Error("fetch_failed");
     }
 }

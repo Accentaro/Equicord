@@ -5,9 +5,9 @@
  */
 
 import { Heading } from "@components/Heading";
-import { ModalCloseButton, ModalContent, ModalHeader, ModalProps, ModalRoot, ModalSize, openMediaModal, MediaModalItem } from "@utils/modal";
+import { MediaModalItem, ModalCloseButton, ModalContent, ModalHeader, ModalProps, ModalRoot, ModalSize, openMediaModal } from "@utils/modal";
 import { findByPropsLazy } from "@webpack";
-import { ChannelStore, React, useEffect, useMemo, useRef, useState } from "@webpack/common";
+import { ChannelStore, React, useCallback, useEffect, useMemo, useRef, useState } from "@webpack/common";
 
 import { extractImages, GalleryItem } from "../utils/extractImages";
 import { fetchMessagesChunk } from "../utils/pagination";
@@ -61,15 +61,18 @@ export function GalleryModal(props: ModalProps & { channelId: string; settings: 
     const [viewerIndex, setViewerIndex] = useState<number | null>(null);
 
     const abortRef = useRef<AbortController | null>(null);
+    const loadingRef = useRef<boolean>(false);
 
     useEffect(() => {
         return () => abortRef.current?.abort();
     }, []);
 
-    async function loadNextChunks(chunks: number) {
-        if (loading) return;
+    const loadNextChunks = useCallback(async (chunks: number) => {
+        // Use ref to prevent race conditions
+        if (loadingRef.current) return;
         if (!hasMore) return;
 
+        loadingRef.current = true;
         setLoading(true);
         setError(null);
 
@@ -80,6 +83,7 @@ export function GalleryModal(props: ModalProps & { channelId: string; settings: 
         try {
             let before = cache.oldestMessageId;
             let localHasMore = cache.hasMore;
+            let loadedAny = false;
 
             for (let i = 0; i < chunks && localHasMore; i++) {
                 const msgs = await fetchMessagesChunk({
@@ -107,25 +111,42 @@ export function GalleryModal(props: ModalProps & { channelId: string; settings: 
                     cache.keys.add(it.key);
                     cache.items.push(it);
                 }
+
+                loadedAny = true;
             }
 
-            cache.hasMore = localHasMore;
-
-            setItems([...cache.items]);
-            setHasMore(cache.hasMore);
+            // Only update state if we successfully loaded at least one chunk
+            if (loadedAny || !localHasMore) {
+                cache.hasMore = localHasMore;
+                setItems([...cache.items]);
+                setHasMore(cache.hasMore);
+            }
         } catch (e: unknown) {
-            if (e instanceof Error && e.name === "AbortError") return;
+            // Don't set error for aborted requests
+            if (e instanceof Error && (e.name === "AbortError" || e.message === "AbortError")) {
+                loadingRef.current = false;
+                setLoading(false);
+                return;
+            }
+            console.error("Failed to load gallery items:", e);
             setError("Unable to load gallery items");
+            // If we got an error and have no items, mark as no more to prevent infinite retries
+            if (cache.items.length === 0) {
+                cache.hasMore = false;
+                setHasMore(false);
+            }
         } finally {
+            loadingRef.current = false;
             setLoading(false);
         }
-    }
+    }, [channelId, hasMore, settings.chunkSize, settings.includeEmbeds, settings.includeGifs, cache]);
 
     // Initial load/preload (lazy, only after modal opens).
     useEffect(() => {
-        if (cache.items.length) return;
+        if (items.length > 0) return;
+        if (loadingRef.current) return;
         void loadNextChunks(Math.max(1, Math.floor(settings.preloadChunks)));
-    }, [channelId, cache.items.length, settings.preloadChunks]);
+    }, [channelId, items.length, settings.preloadChunks, loadNextChunks]);
 
     const onCloseAll = () => {
         abortRef.current?.abort();
@@ -333,8 +354,8 @@ export function GalleryModal(props: ModalProps & { channelId: string; settings: 
                         isLoading={loading}
                         hasMore={hasMore}
                         error={error}
-                        onRetry={() => loadNextChunks(1)}
-                        onLoadMore={() => loadNextChunks(1)}
+                        onRetry={loadNextChunks.bind(null, 1)}
+                        onLoadMore={loadNextChunks.bind(null, 1)}
                         onSelect={setViewerIndex}
                     />
                 )}
