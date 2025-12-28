@@ -1,3 +1,9 @@
+/*
+ * Vencord, a Discord client mod
+ * Copyright (c) 2025 Vendicated and contributors
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ */
+
 import { Heading } from "@components/Heading";
 import { ModalCloseButton, ModalContent, ModalHeader, ModalProps, ModalRoot, ModalSize } from "@utils/modal";
 import { findByPropsLazy } from "@webpack";
@@ -119,8 +125,7 @@ export function GalleryModal(props: ModalProps & { channelId: string; settings: 
     useEffect(() => {
         if (cache.items.length) return;
         void loadNextPages(Math.max(1, Math.floor(settings.preloadPages)));
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [channelId]);
+    }, [channelId, cache.items.length, settings.preloadPages]);
 
     const onCloseAll = () => {
         abortRef.current?.abort();
@@ -149,7 +154,7 @@ export function GalleryModal(props: ModalProps & { channelId: string; settings: 
             try {
                 const response = await fetch(viewerItem.url);
                 if (!response.ok) throw new Error("Failed to fetch image");
-                
+
                 const blob = await response.blob();
                 const url = window.URL.createObjectURL(blob);
                 const link = document.createElement("a");
@@ -180,7 +185,7 @@ export function GalleryModal(props: ModalProps & { channelId: string; settings: 
             img.style.maxWidth = "100vw";
             img.style.maxHeight = "100vh";
             img.style.objectFit = "contain";
-            
+
             const container = document.createElement("div");
             container.style.position = "fixed";
             container.style.top = "0";
@@ -193,23 +198,23 @@ export function GalleryModal(props: ModalProps & { channelId: string; settings: 
             container.style.justifyContent = "center";
             container.style.zIndex = "99999";
             container.style.cursor = "pointer";
-            
+
             container.appendChild(img);
             document.body.appendChild(container);
-            
+
             const closeFullscreen = () => {
                 if (document.body.contains(container)) {
                     document.body.removeChild(container);
                 }
                 document.removeEventListener("keydown", keyHandler);
             };
-            
+
             const keyHandler = (e: KeyboardEvent) => {
                 if (e.key === "Escape") {
                     closeFullscreen();
                 }
             };
-            
+
             container.addEventListener("click", closeFullscreen);
             document.addEventListener("keydown", keyHandler);
         }
