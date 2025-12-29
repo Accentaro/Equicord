@@ -8,6 +8,7 @@ import "./style.css";
 
 import { ChannelToolbarButton } from "@api/HeaderBar";
 import { definePluginSettings } from "@api/Settings";
+import { isPluginEnabled } from "@api/PluginManager";
 import ErrorBoundary from "@components/ErrorBoundary";
 import { Heading } from "@components/Heading";
 import { EquicordDevs } from "@utils/constants";
@@ -567,7 +568,8 @@ export default definePlugin({
             replacement: {
                 match: /(?<=null!=(\i)\?.{0,20})\i\.\i,{children:\1/,
                 replace: "'div',{onClick:e=>$self.handleMediaViewerClick(e),children:$1"
-            }
+            },
+            predicate: () => !isPluginEnabled("ImageZoom")
         }
     ],
 
