@@ -75,7 +75,7 @@
 }
 
 .vc-gallery-icon {
-    color: currentColor;
+    color: currentcolor;
 }
 
 /* Grid styles */
@@ -213,12 +213,12 @@
     transition: color 0.15s ease;
 }
 
-.vc-gallery-nav-button:not(:disabled):hover .vc-gallery-nav-icon {
-    color: var(--interactive-icon-hover);
-}
-
 .vc-gallery-nav-button:disabled .vc-gallery-nav-icon {
     color: var(--interactive-muted);
+}
+
+.vc-gallery-nav-button:not(:disabled):hover .vc-gallery-nav-icon {
+    color: var(--interactive-icon-hover);
 }
 
 .vc-gallery-lightbox-zone-disabled {
