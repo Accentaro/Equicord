@@ -13,7 +13,7 @@ import definePlugin, { OptionType } from "@utils/types";
 import { findByPropsLazy } from "@webpack";
 import { ChannelStore, PermissionsBits, PermissionStore, React, SelectedChannelStore, useStateFromStores } from "@webpack/common";
 
-import { GalleryModal } from "./components/GalleryModal";
+import { GalleryModal, cacheByChannel } from "./components/GalleryModal";
 import "./style.css";
 
 const ChannelTypes = findByPropsLazy("DM", "GUILD_TEXT", "PUBLIC_THREAD", "UNKNOWN");
@@ -84,13 +84,14 @@ function isSupportedChannel(channel: { type?: number; isDM?: () => boolean; isGr
         case ChannelTypes.PRIVATE_THREAD:
             return true;
         default:
-            return false;
+    return false;
     }
 }
 
 function canUseGallery(channel: { guild_id?: string; type?: number; isDM?: () => boolean; isGroupDM?: () => boolean; isMultiUserDM?: () => boolean } | null | undefined): boolean {
     if (!isSupportedChannel(channel)) return false;
     if (!channel) return false;
+    // PermissionStore.can expects PartialChannel, but channel type is incomplete
     if (channel.guild_id && !PermissionStore.can(PermissionsBits.VIEW_CHANNEL, channel as any)) return false;
     return true;
 }
@@ -147,6 +148,7 @@ function GalleryToolbarButton() {
     );
 }
 
+
 export default definePlugin({
     name: "ChannelGallery",
     description: "Adds a Gallery view for images in the current channel",
@@ -161,9 +163,9 @@ export default definePlugin({
         {
             find: ".dimensionlessImage,",
             replacement: {
-                match: /(?<=null!=(\i)\?.{0,20})\i\.\i,{children:\1/,
+                    match: /(?<=null!=(\i)\?.{0,20})\i\.\i,{children:\1/,
                 replace: "'div',{onClick:e=>$self.handleMediaViewerClick(e),children:$1"
-            }
+                }
         }
     ],
 
@@ -190,5 +192,17 @@ export default definePlugin({
         icon: GalleryIcon,
         render: GalleryToolbarButton,
         priority: 250
+    },
+
+    stop() {
+        // Clear gallery cache when plugin is disabled
+        cacheByChannel.clear();
+
+        // Close any open modals
+        if (modalKey) {
+            closeModal(modalKey);
+            modalKey = null;
+            modalChannelId = null;
+        }
     }
 });

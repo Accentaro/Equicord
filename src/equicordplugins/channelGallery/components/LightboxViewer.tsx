@@ -7,6 +7,7 @@
 import { findByPropsLazy } from "@webpack";
 import { React, useEffect } from "@webpack/common";
 
+import "../style.css";
 const jumper: any = findByPropsLazy("jumpToMessage");
 import type { GalleryItem } from "../utils/extractImages";
 
@@ -77,188 +78,60 @@ export function LightboxViewer(props: {
     }, [items, nextIndex, prevIndex]);
 
     return (
-        <div
-            style={{
-                position: "relative",
-                height: "100%",
-                width: "100%",
-                background: "var(--background-primary)"
-            }}
-        >
-
-            <div
-                style={{
-                    position: "absolute",
-                    inset: 0,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    padding: 12
-                }}
-            >
+        <div className="vc-gallery-lightbox">
+            <div className="vc-gallery-lightbox-content">
                 {/* Click zones for prev/next (match Discord viewer UX) */}
                 <div
                     onClick={() => hasPrev && onChangeIndex(prevIndex)}
-                    style={{
-                        position: "absolute",
-                        inset: 0,
-                        width: "50%",
-                        cursor: hasPrev ? "w-resize" : "default",
-                        pointerEvents: hasPrev ? "auto" : "none"
-                    }}
+                    className={`vc-gallery-lightbox-zone vc-gallery-lightbox-zone-left ${hasPrev ? "" : "vc-gallery-lightbox-zone-disabled"}`}
                 />
                 <div
                     onClick={() => hasNext && onChangeIndex(nextIndex)}
-                    style={{
-                        position: "absolute",
-                        inset: 0,
-                        left: "50%",
-                        width: "50%",
-                        cursor: hasNext ? "e-resize" : "default",
-                        pointerEvents: hasNext ? "auto" : "none"
-                    }}
+                    className={`vc-gallery-lightbox-zone vc-gallery-lightbox-zone-right ${hasNext ? "" : "vc-gallery-lightbox-zone-disabled"}`}
                 />
                 <img
                     src={url}
                     alt={item.filename ?? "Image"}
-                    style={{
-                        maxWidth: "100%",
-                        maxHeight: "100%",
-                        width: "auto",
-                        height: "auto",
-                        objectFit: "contain",
-                        borderRadius: 12,
-                        background: "var(--background-secondary)"
-                    }}
+                    className="vc-gallery-lightbox-image"
                 />
             </div>
 
-            <div
-                style={{
-                    position: "absolute",
-                    left: 12,
-                    top: "50%",
-                    transform: "translateY(-50%)",
-                    zIndex: 2
-                }}
+            <button
+                disabled={!hasPrev}
+                onClick={() => hasPrev && onChangeIndex(prevIndex)}
+                className="vc-gallery-nav-button vc-gallery-nav-button-left"
             >
-                <button
-                    disabled={!hasPrev}
-                    onClick={() => hasPrev && onChangeIndex(prevIndex)}
-                    style={{
-                        width: 48,
-                        height: 48,
-                        borderRadius: "50%",
-                        border: "none",
-                        background: hasPrev ? "var(--background-modifier-hover)" : "transparent",
-                        cursor: hasPrev ? "pointer" : "not-allowed",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        opacity: hasPrev ? 1 : 0.3,
-                        transition: "background-color 0.15s ease, opacity 0.15s ease"
-                    }}
-                    onMouseEnter={e => {
-                        if (hasPrev) {
-                            e.currentTarget.style.backgroundColor = "var(--control-icon-only-background-hover)";
-                        }
-                    }}
-                    onMouseLeave={e => {
-                        if (hasPrev) {
-                            e.currentTarget.style.backgroundColor = "var(--background-modifier-hover)";
-                        }
-                    }}
+                <svg
+                    width="24"
+                    height="24"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    className="vc-gallery-nav-icon"
                 >
-                    <svg
-                        width="24"
-                        height="24"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        style={{
-                            color: hasPrev ? "var(--interactive-icon-default)" : "var(--interactive-muted)",
-                            transition: "color 0.15s ease"
-                        }}
-                        onMouseEnter={e => {
-                            if (hasPrev) {
-                                e.currentTarget.style.color = "var(--interactive-icon-hover)";
-                            }
-                        }}
-                        onMouseLeave={e => {
-                            if (hasPrev) {
-                                e.currentTarget.style.color = "var(--interactive-icon-default)";
-                            }
-                        }}
-                    >
-                        <path
-                            d="M15.41 7.41L14 6L8 12L14 18L15.41 16.59L10.83 12L15.41 7.41Z"
-                            fill="currentColor"
-                        />
-                    </svg>
-                </button>
-            </div>
-            <div
-                style={{
-                    position: "absolute",
-                    right: 12,
-                    top: "50%",
-                    transform: "translateY(-50%)",
-                    zIndex: 2
-                }}
+                    <path
+                        d="M15.41 7.41L14 6L8 12L14 18L15.41 16.59L10.83 12L15.41 7.41Z"
+                        fill="currentColor"
+                    />
+                </svg>
+            </button>
+            <button
+                disabled={!hasNext}
+                onClick={() => hasNext && onChangeIndex(nextIndex)}
+                className="vc-gallery-nav-button vc-gallery-nav-button-right"
             >
-                <button
-                    disabled={!hasNext}
-                    onClick={() => hasNext && onChangeIndex(nextIndex)}
-                    style={{
-                        width: 48,
-                        height: 48,
-                        borderRadius: "50%",
-                        border: "none",
-                        background: hasNext ? "var(--background-modifier-hover)" : "transparent",
-                        cursor: hasNext ? "pointer" : "not-allowed",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        opacity: hasNext ? 1 : 0.3,
-                        transition: "background-color 0.15s ease, opacity 0.15s ease"
-                    }}
-                    onMouseEnter={e => {
-                        if (hasNext) {
-                            e.currentTarget.style.backgroundColor = "var(--control-icon-only-background-hover)";
-                        }
-                    }}
-                    onMouseLeave={e => {
-                        if (hasNext) {
-                            e.currentTarget.style.backgroundColor = "var(--background-modifier-hover)";
-                        }
-                    }}
+                <svg
+                    width="24"
+                    height="24"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    className="vc-gallery-nav-icon"
                 >
-                    <svg
-                        width="24"
-                        height="24"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        style={{
-                            color: hasNext ? "var(--interactive-icon-default)" : "var(--interactive-muted)",
-                            transition: "color 0.15s ease"
-                        }}
-                        onMouseEnter={e => {
-                            if (hasNext) {
-                                e.currentTarget.style.color = "var(--interactive-icon-hover)";
-                            }
-                        }}
-                        onMouseLeave={e => {
-                            if (hasNext) {
-                                e.currentTarget.style.color = "var(--interactive-icon-default)";
-                            }
-                        }}
-                    >
-                        <path
-                            d="M8.59 16.59L10 18L16 12L10 6L8.59 7.41L13.17 12L8.59 16.59Z"
-                            fill="currentColor"
-                        />
-                    </svg>
-                </button>
-            </div>
+                    <path
+                        d="M8.59 16.59L10 18L16 12L10 6L8.59 7.41L13.17 12L8.59 16.59Z"
+                        fill="currentColor"
+                    />
+                </svg>
+            </button>
         </div>
     );
 }

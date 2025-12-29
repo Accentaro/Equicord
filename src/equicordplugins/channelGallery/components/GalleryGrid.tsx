@@ -1,5 +1,6 @@
 import { Button, React, useEffect, useMemo, useRef, useState } from "@webpack/common";
 
+import "../style.css";
 import type { GalleryItem } from "../utils/extractImages";
 
 const GAP = 10;
@@ -57,7 +58,7 @@ export function GalleryGrid(props: {
         // Use requestAnimationFrame to ensure element is rendered
         const rafId = requestAnimationFrame(updateViewport);
         window.addEventListener("resize", updateViewport);
-        
+
         return () => {
             window.removeEventListener("resize", updateViewport);
             cancelAnimationFrame(rafId);
@@ -89,7 +90,7 @@ export function GalleryGrid(props: {
         const checkLoadMore = () => {
             // Don't check if container isn't ready
             if (el.clientHeight === 0 || el.scrollHeight === 0) return;
-            
+
             const scrollTop = el.scrollTop;
             const scrollHeight = el.scrollHeight;
             const clientHeight = el.clientHeight;
@@ -98,7 +99,7 @@ export function GalleryGrid(props: {
             const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
             if (distanceFromBottom < 600 && distanceFromBottom >= 0) {
                 if (!isLoading && hasMore) {
-                    onLoadMore();
+                onLoadMore();
                 }
             }
         };
@@ -125,7 +126,7 @@ export function GalleryGrid(props: {
                 setViewport(v => ({ ...v, scrollTop: el.scrollTop }));
             }}
         >
-            <div style={{ position: "relative", height: totalHeight }}>
+            <div className="vc-gallery-grid-container" style={{ height: totalHeight }}>
                 {items.slice(startIndex, endIndex).map((item, i) => {
                     const idx = startIndex + i;
                     const row = Math.floor(idx / columns);
@@ -135,46 +136,33 @@ export function GalleryGrid(props: {
                         <button
                             key={item.key}
                             onClick={() => onSelect(idx)}
+                            className="vc-gallery-thumbnail-button"
                             style={{
-                                position: "absolute",
-                                left: col * (cell + GAP),
-                                top: row * rowHeight,
-                                width: cell,
-                                height: cell,
-                                padding: 0,
-                                border: "none",
-                                background: "transparent",
-                                cursor: "pointer"
+                                left: `${col * (cell + GAP)}px`,
+                                top: `${row * rowHeight}px`,
+                                width: `${cell}px`,
+                                height: `${cell}px`
                             }}
                         >
                             <div
+                                className="vc-gallery-thumbnail-wrapper"
                                 style={{
-                                    width: cell,
-                                    height: cell,
-                                    borderRadius: 10,
-                                    overflow: "hidden",
-                                    background: "var(--background-secondary)"
+                                    width: `${cell}px`,
+                                    height: `${cell}px`
                                 }}
                             >
                                 <img
                                     src={getThumbUrl(item, thumbSize)}
                                     alt={item.filename ?? "Image"}
                                     loading="lazy"
-                                    style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                                    className="vc-gallery-thumbnail-image"
                                 />
                             </div>
                             {showCaptions && item.filename && (
                                 <div
+                                    className="vc-gallery-caption"
                                     title={item.filename}
-                                    style={{
-                                        marginTop: 6,
-                                        fontSize: 12,
-                                        color: "var(--text-muted)",
-                                        overflow: "hidden",
-                                        textOverflow: "ellipsis",
-                                        whiteSpace: "nowrap",
-                                        width: cell
-                                    }}
+                                    style={{ width: `${cell}px` }}
                                 >
                                     {item.filename}
                                 </div>
@@ -184,20 +172,20 @@ export function GalleryGrid(props: {
                 })}
             </div>
 
-            <div style={{ padding: "10px 0 16px", textAlign: "center" }}>
+            <div className="vc-gallery-status">
                 {error ? (
-                    <div style={{ color: "var(--text-danger)" }}>
+                    <div className="vc-gallery-status-error">
                         {error}{" "}
                         <Button size={Button.Sizes.SMALL} onClick={onRetry}>
                             Retry
                         </Button>
                     </div>
                 ) : isLoading ? (
-                    <div style={{ color: "var(--text-muted)" }}>Loading…</div>
+                    <div className="vc-gallery-status-muted">Loading…</div>
                 ) : !items.length ? (
-                    <div style={{ color: "var(--text-muted)" }}>No images found yet</div>
+                    <div className="vc-gallery-status-muted">No images found yet</div>
                 ) : !hasMore ? (
-                    <div style={{ color: "var(--text-muted)" }}>End of history</div>
+                    <div className="vc-gallery-status-muted">End of history</div>
                 ) : null}
             </div>
         </div>

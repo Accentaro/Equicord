@@ -25,3 +25,204 @@
     background: transparent;
 }
 
+/* Modal styles */
+.vc-channel-gallery-modal {
+    padding: 0;
+    overflow: hidden;
+}
+
+.vc-gallery-modal-title {
+    flex: 1;
+    margin: 0;
+}
+
+/* Button styles */
+.vc-gallery-button {
+    padding: 8px 16px;
+    border-radius: 20px;
+    border: none;
+    background: var(--background-modifier-hover);
+    color: var(--text-default);
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    transition: background-color 0.15s ease;
+    margin-right: 8px;
+}
+
+.vc-gallery-button:hover {
+    background: var(--background-modifier-active);
+}
+
+.vc-gallery-icon-button {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    border: none;
+    background: var(--background-modifier-hover);
+    color: var(--interactive-icon-default);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color 0.15s ease, color 0.15s ease;
+    margin-right: 8px;
+}
+
+.vc-gallery-icon-button:hover {
+    background: var(--background-modifier-active);
+    color: var(--interactive-icon-hover);
+}
+
+.vc-gallery-icon {
+    color: currentColor;
+}
+
+/* Grid styles */
+.vc-gallery-grid-container {
+    position: relative;
+}
+
+.vc-gallery-thumbnail-button {
+    position: absolute;
+    padding: 0;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+}
+
+.vc-gallery-thumbnail-wrapper {
+    border-radius: 10px;
+    overflow: hidden;
+    background: var(--background-secondary);
+}
+
+.vc-gallery-thumbnail-image {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+.vc-gallery-caption {
+    margin-top: 6px;
+    font-size: 12px;
+    color: var(--text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.vc-gallery-status {
+    padding: 10px 0 16px;
+    text-align: center;
+}
+
+.vc-gallery-status-error {
+    color: var(--text-danger);
+}
+
+.vc-gallery-status-muted {
+    color: var(--text-muted);
+}
+
+/* Lightbox viewer styles */
+.vc-gallery-lightbox {
+    position: relative;
+    height: 100%;
+    width: 100%;
+    background: var(--background-primary);
+}
+
+.vc-gallery-lightbox-content {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 12px;
+}
+
+.vc-gallery-lightbox-image {
+    max-width: 100%;
+    max-height: 100%;
+    width: auto;
+    height: auto;
+    object-fit: contain;
+    border-radius: 12px;
+    background: var(--background-secondary);
+}
+
+.vc-gallery-lightbox-zone {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+}
+
+.vc-gallery-lightbox-zone-left {
+    width: 50%;
+    cursor: w-resize;
+    pointer-events: auto;
+}
+
+.vc-gallery-lightbox-zone-right {
+    left: 50%;
+    width: 50%;
+    cursor: e-resize;
+    pointer-events: auto;
+}
+
+.vc-gallery-nav-button {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 2;
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    border: none;
+    background: var(--background-modifier-hover);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 1;
+    transition: background-color 0.15s ease, opacity 0.15s ease;
+}
+
+.vc-gallery-nav-button:disabled {
+    background: transparent;
+    cursor: not-allowed;
+    opacity: 0.3;
+}
+
+.vc-gallery-nav-button:not(:disabled):hover {
+    background: var(--control-icon-only-background-hover);
+}
+
+.vc-gallery-nav-button-left {
+    left: 12px;
+}
+
+.vc-gallery-nav-button-right {
+    right: 12px;
+}
+
+.vc-gallery-nav-icon {
+    color: var(--interactive-icon-default);
+    transition: color 0.15s ease;
+}
+
+.vc-gallery-nav-button:not(:disabled):hover .vc-gallery-nav-icon {
+    color: var(--interactive-icon-hover);
+}
+
+.vc-gallery-nav-button:disabled .vc-gallery-nav-icon {
+    color: var(--interactive-muted);
+}
+
+.vc-gallery-lightbox-zone-disabled {
+    cursor: default;
+    pointer-events: none;
+}
+

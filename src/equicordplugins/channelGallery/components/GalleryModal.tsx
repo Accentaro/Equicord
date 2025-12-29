@@ -31,7 +31,7 @@ type GalleryCache = {
     hasMore: boolean;
 };
 
-const cacheByChannel = new Map<string, GalleryCache>();
+export const cacheByChannel = new Map<string, GalleryCache>();
 
 function getOrCreateCache(channelId: string): GalleryCache {
     const existing = cacheByChannel.get(channelId);
@@ -170,32 +170,28 @@ export function GalleryModal(props: ModalProps & { channelId: string; settings: 
         }
     };
 
-    const handleDownload = async () => {
-        if (viewerItem?.url) {
-            try {
-                const response = await fetch(viewerItem.url);
-                if (!response.ok) throw new Error("Failed to fetch image");
+    const downloadRef = React.useRef<HTMLAnchorElement | null>(null);
 
-                const blob = await response.blob();
-                const url = window.URL.createObjectURL(blob);
-                const link = document.createElement("a");
-                link.href = url;
-                link.download = viewerItem.filename || "image";
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
-                window.URL.revokeObjectURL(url);
-            } catch (error) {
-                console.error("Failed to download image:", error);
-                // Fallback: try direct download
-                const link = document.createElement("a");
-                link.href = viewerItem.url;
-                link.download = viewerItem.filename || "image";
-                link.target = "_blank";
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
-            }
+    const handleDownload = async () => {
+        if (!viewerItem?.url || !downloadRef.current) return;
+
+        try {
+            const response = await fetch(viewerItem.url);
+            if (!response.ok) throw new Error("Failed to fetch image");
+
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            downloadRef.current.href = url;
+            downloadRef.current.download = viewerItem.filename || "image";
+            downloadRef.current.click();
+            window.URL.revokeObjectURL(url);
+        } catch (error) {
+            console.error("Failed to download image:", error);
+            // Fallback: try direct download
+            downloadRef.current.href = viewerItem.url;
+            downloadRef.current.download = viewerItem.filename || "image";
+            downloadRef.current.target = "_blank";
+            downloadRef.current.click();
         }
     };
 
@@ -223,59 +219,23 @@ export function GalleryModal(props: ModalProps & { channelId: string; settings: 
 
     return (
         <ModalRoot {...modalProps} size={ModalSize.LARGE} aria-label="Gallery">
+            {/* Hidden anchor for downloads - part of React tree, not DOM manipulation */}
+            <a ref={downloadRef} style={{ display: "none" }} />
             <ModalHeader>
-                <Heading tag="h3" style={{ flex: 1, margin: 0 }}>
+                <Heading tag="h3" className="vc-gallery-modal-title">
                     {title}
                 </Heading>
                 {viewerItem && (
                     <>
                         <button
                             onClick={handleOpenMessage}
-                            style={{
-                                padding: "8px 16px",
-                                borderRadius: "20px",
-                                border: "none",
-                                background: "var(--background-modifier-hover)",
-                                color: "var(--text-default)",
-                                cursor: "pointer",
-                                fontSize: "14px",
-                                fontWeight: 500,
-                                transition: "background-color 0.15s ease",
-                                marginRight: 8
-                            }}
-                            onMouseEnter={e => {
-                                e.currentTarget.style.backgroundColor = "var(--background-modifier-active)";
-                            }}
-                            onMouseLeave={e => {
-                                e.currentTarget.style.backgroundColor = "var(--background-modifier-hover)";
-                            }}
+                            className="vc-gallery-button"
                         >
                             Open message
                         </button>
                         <button
                             onClick={handleDownload}
-                            style={{
-                                width: 32,
-                                height: 32,
-                                borderRadius: "50%",
-                                border: "none",
-                                background: "var(--background-modifier-hover)",
-                                color: "var(--interactive-icon-default)",
-                                cursor: "pointer",
-                                display: "flex",
-                                alignItems: "center",
-                                justifyContent: "center",
-                                transition: "background-color 0.15s ease, color 0.15s ease",
-                                marginRight: 8
-                            }}
-                            onMouseEnter={e => {
-                                e.currentTarget.style.backgroundColor = "var(--background-modifier-active)";
-                                e.currentTarget.style.color = "var(--interactive-icon-hover)";
-                            }}
-                            onMouseLeave={e => {
-                                e.currentTarget.style.backgroundColor = "var(--background-modifier-hover)";
-                                e.currentTarget.style.color = "var(--interactive-icon-default)";
-                            }}
+                            className="vc-gallery-icon-button"
                             aria-label="Download image"
                         >
                             <svg
@@ -283,7 +243,7 @@ export function GalleryModal(props: ModalProps & { channelId: string; settings: 
                                 height="20"
                                 viewBox="0 0 24 24"
                                 fill="none"
-                                style={{ color: "currentColor" }}
+                                className="vc-gallery-icon"
                             >
                                 <path
                                     d="M12 2a1 1 0 0 1 1 1v10.59l3.3-3.3a1 1 0 1 1 1.4 1.42l-5 5a1 1 0 0 1-1.4 0l-5-5a1 1 0 1 1 1.4-1.42l3.3 3.3V3a1 1 0 0 1 1-1ZM3 20a1 1 0 1 0 0 2h18a1 1 0 1 0 0-2H3Z"
@@ -293,28 +253,7 @@ export function GalleryModal(props: ModalProps & { channelId: string; settings: 
                         </button>
                         <button
                             onClick={handleFullscreen}
-                            style={{
-                                width: 32,
-                                height: 32,
-                                borderRadius: "50%",
-                                border: "none",
-                                background: "var(--background-modifier-hover)",
-                                color: "var(--interactive-icon-default)",
-                                cursor: "pointer",
-                                display: "flex",
-                                alignItems: "center",
-                                justifyContent: "center",
-                                transition: "background-color 0.15s ease, color 0.15s ease",
-                                marginRight: 8
-                            }}
-                            onMouseEnter={e => {
-                                e.currentTarget.style.backgroundColor = "var(--background-modifier-active)";
-                                e.currentTarget.style.color = "var(--interactive-icon-hover)";
-                            }}
-                            onMouseLeave={e => {
-                                e.currentTarget.style.backgroundColor = "var(--background-modifier-hover)";
-                                e.currentTarget.style.color = "var(--interactive-icon-default)";
-                            }}
+                            className="vc-gallery-icon-button"
                             aria-label="View fullscreen"
                         >
                             <svg
@@ -322,7 +261,7 @@ export function GalleryModal(props: ModalProps & { channelId: string; settings: 
                                 height="20"
                                 viewBox="0 0 24 24"
                                 fill="none"
-                                style={{ color: "currentColor" }}
+                                className="vc-gallery-icon"
                             >
                                 <path
                                     d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"
@@ -336,7 +275,6 @@ export function GalleryModal(props: ModalProps & { channelId: string; settings: 
             </ModalHeader>
             <ModalContent
                 className="vc-channel-gallery-modal"
-                style={{ padding: 0, overflow: "hidden" }}
             >
                 {viewerItem ? (
                     <LightboxViewer
