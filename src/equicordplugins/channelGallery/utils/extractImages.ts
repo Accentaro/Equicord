@@ -1,3 +1,9 @@
+/*
+ * Vencord, a Discord client mod
+ * Copyright (c) 2025 Vendicated and contributors
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ */
+
 const IMAGE_EXTS = new Set(["png", "jpg", "jpeg", "gif", "webp", "avif"]);
 
 function getExt(name?: string): string {
@@ -113,4 +119,3 @@ export function extractImages(messages: any[], channelId: string, opts: { includ
 
     return items;
 }
-

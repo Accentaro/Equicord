@@ -1,3 +1,9 @@
+/*
+ * Vencord, a Discord client mod
+ * Copyright (c) 2025 Vendicated and contributors
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ */
+
 import { Constants, RestAPI } from "@webpack/common";
 
 const FETCH_TIMEOUT_MS = 10_000;
@@ -8,19 +14,16 @@ export async function fetchMessagesChunk(args: {
     limit: number;
     signal?: AbortSignal;
 }): Promise<any[]> {
-    const timeout = setTimeout(() => {
-        if (args.signal && !args.signal.aborted) {
-            // Can't abort RestAPI.get directly, but we can check signal in catch
-        }
-    }, FETCH_TIMEOUT_MS);
-
-    // Check if already aborted
+    if (!args.channelId) return [];
     if (args.signal?.aborted) {
-        clearTimeout(timeout);
         const err = new Error("AbortError");
         err.name = "AbortError";
         throw err;
     }
+
+    const timeout = setTimeout(() => {
+        // Timeout handled in catch block
+    }, FETCH_TIMEOUT_MS);
 
     try {
         const res = await RestAPI.get({
@@ -33,15 +36,13 @@ export async function fetchMessagesChunk(args: {
         });
 
         clearTimeout(timeout);
-        
-        // Check if aborted after request
+
         if (args.signal?.aborted) {
             const err = new Error("AbortError");
             err.name = "AbortError";
             throw err;
         }
 
-        // RestAPI.get returns the response body directly or an object with body property
         const body = res?.body ?? res;
         if (!Array.isArray(body)) {
             console.warn("RestAPI.get returned non-array body:", body);
@@ -50,7 +51,6 @@ export async function fetchMessagesChunk(args: {
         return body;
     } catch (e: unknown) {
         clearTimeout(timeout);
-        // Check for abort first
         if (args.signal?.aborted) {
             const err = new Error("AbortError");
             err.name = "AbortError";
@@ -65,4 +65,3 @@ export async function fetchMessagesChunk(args: {
         throw new Error("fetch_failed");
     }
 }
-

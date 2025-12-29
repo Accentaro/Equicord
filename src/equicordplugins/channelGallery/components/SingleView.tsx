@@ -4,44 +4,80 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-import "../style.css";
-
 import { findByPropsLazy } from "@webpack";
-import { React, useEffect } from "@webpack/common";
-const jumper: any = findByPropsLazy("jumpToMessage");
-import type { GalleryItem } from "../utils/extractImages";
+import { React, useEffect, useMemo } from "@webpack/common";
 
-function preload(url: string) {
+import type { GalleryItem } from "../utils/media";
+
+const jumper: any = findByPropsLazy("jumpToMessage");
+
+function preload(url: string): void {
+    if (!url) return;
     const img = new Image();
     img.src = url;
 }
 
-export function LightboxViewer(props: {
+export function SingleView(props: {
     items: GalleryItem[];
-    index: number;
+    selectedStableId: string;
     channelId: string;
     onClose(): void;
-    onChangeIndex(nextIndex: number): void;
+    onChange(stableId: string): void;
     onOpenMessage(): void;
 }) {
-    const { items, index, channelId, onClose, onChangeIndex } = props;
+    const { items, selectedStableId, channelId, onClose, onChange, onOpenMessage } = props;
 
-    // Early return if items array is invalid or index is out of bounds
-    if (!items || items.length === 0 || index < 0 || index >= items.length)
-        return null;
+    // Find index by stable ID
+    const selectedIndex = useMemo(() => {
+        if (!items || items.length === 0 || !selectedStableId) return -1;
+        return items.findIndex(item => item?.stableId === selectedStableId);
+    }, [items, selectedStableId]);
 
-    const item = items[index];
-    const url = item?.url;
+    // Early return if invalid
+    if (selectedIndex < 0 || selectedIndex >= items.length) return null;
 
-    const hasPrev = index > 0;
-    const hasNext = index < items.length - 1;
+    const item = items[selectedIndex];
+    if (!item || !item.url) return null;
 
-    const prevIndex = hasPrev ? index - 1 : index;
-    const nextIndex = hasNext ? index + 1 : index;
+    const hasPrev = selectedIndex > 0;
+    const hasNext = selectedIndex < items.length - 1;
 
-    if (!item || !url) return null;
+    const prevStableId = hasPrev && items[selectedIndex - 1] ? items[selectedIndex - 1].stableId : null;
+    const nextStableId = hasNext && items[selectedIndex + 1] ? items[selectedIndex + 1].stableId : null;
 
-    const jump = () => {
+    // Keyboard navigation
+    useEffect(() => {
+        const onKeyDown = (e: KeyboardEvent) => {
+            if (e.key === "Escape") {
+                e.preventDefault();
+                onClose();
+            } else if (e.key === "ArrowLeft" && hasPrev && prevStableId) {
+                e.preventDefault();
+                onChange(prevStableId);
+            } else if (e.key === "ArrowRight" && hasNext && nextStableId) {
+                e.preventDefault();
+                onChange(nextStableId);
+            } else if (e.key === "Enter") {
+                e.preventDefault();
+                handleJump();
+            }
+        };
+
+        window.addEventListener("keydown", onKeyDown);
+        return () => window.removeEventListener("keydown", onKeyDown);
+    }, [hasPrev, hasNext, prevStableId, nextStableId, onClose, onChange]);
+
+    // Preload neighbors
+    useEffect(() => {
+        if (!items || items.length === 0) return;
+        const prev = hasPrev && items[selectedIndex - 1] ? items[selectedIndex - 1] : null;
+        const next = hasNext && items[selectedIndex + 1] ? items[selectedIndex + 1] : null;
+        if (prev?.url) preload(prev.url);
+        if (next?.url) preload(next.url);
+    }, [items, selectedIndex, hasPrev, hasNext]);
+
+    const handleJump = () => {
+        if (!item?.messageId) return;
         try {
             jumper.jumpToMessage({
                 channelId,
@@ -50,53 +86,39 @@ export function LightboxViewer(props: {
                 jumpType: "INSTANT"
             });
         } finally {
-            props.onOpenMessage();
+            onOpenMessage();
         }
     };
 
-    useEffect(() => {
-        const onKeyDown = (e: KeyboardEvent) => {
-            if (e.key === "Escape") {
-                e.preventDefault();
-                onClose();
-            } else if (e.key === "ArrowLeft" && hasPrev) {
-                e.preventDefault();
-                onChangeIndex(prevIndex);
-            } else if (e.key === "ArrowRight" && hasNext) {
-                e.preventDefault();
-                onChangeIndex(nextIndex);
-            } else if (e.key === "Enter") {
-                e.preventDefault();
-                jump();
-            }
-        };
-        window.addEventListener("keydown", onKeyDown);
-        return () => window.removeEventListener("keydown", onKeyDown);
-    }, [hasNext, hasPrev, nextIndex, onChangeIndex, onClose, prevIndex, jump]);
+    const handlePrev = (e: React.MouseEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (hasPrev && prevStableId) {
+            onChange(prevStableId);
+        }
+    };
 
-    // Preload neighbors for smoother navigation.
-    useEffect(() => {
-        if (!items || items.length === 0) return;
-        const prev = items[prevIndex];
-        const next = items[nextIndex];
-        if (prev?.url) preload(prev.url);
-        if (next?.url) preload(next.url);
-    }, [items, nextIndex, prevIndex]);
+    const handleNext = (e: React.MouseEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (hasNext && nextStableId) {
+            onChange(nextStableId);
+        }
+    };
 
     return (
         <div className="vc-gallery-lightbox">
             <div className="vc-gallery-lightbox-content">
-                {/* Click zones for prev/next (match Discord viewer UX) */}
                 <div
-                    onClick={() => hasPrev && onChangeIndex(prevIndex)}
+                    onClick={handlePrev}
                     className={`vc-gallery-lightbox-zone vc-gallery-lightbox-zone-left ${hasPrev ? "" : "vc-gallery-lightbox-zone-disabled"}`}
                 />
                 <div
-                    onClick={() => hasNext && onChangeIndex(nextIndex)}
+                    onClick={handleNext}
                     className={`vc-gallery-lightbox-zone vc-gallery-lightbox-zone-right ${hasNext ? "" : "vc-gallery-lightbox-zone-disabled"}`}
                 />
                 <img
-                    src={url}
+                    src={item.url}
                     alt={item.filename ?? "Image"}
                     className="vc-gallery-lightbox-image"
                 />
@@ -104,7 +126,7 @@ export function LightboxViewer(props: {
 
             <button
                 disabled={!hasPrev}
-                onClick={() => hasPrev && onChangeIndex(prevIndex)}
+                onClick={handlePrev}
                 className="vc-gallery-nav-button vc-gallery-nav-button-left"
             >
                 <svg
@@ -122,7 +144,7 @@ export function LightboxViewer(props: {
             </button>
             <button
                 disabled={!hasNext}
-                onClick={() => hasNext && onChangeIndex(nextIndex)}
+                onClick={handleNext}
                 className="vc-gallery-nav-button vc-gallery-nav-button-right"
             >
                 <svg

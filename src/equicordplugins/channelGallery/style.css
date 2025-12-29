@@ -1,3 +1,4 @@
+/* Gallery scroll container */
 .vc-channel-gallery-scroll {
     height: 100%;
     overflow: auto;
@@ -78,20 +79,26 @@
     color: currentcolor;
 }
 
-/* Grid styles */
-.vc-gallery-grid-container {
-    position: relative;
+/* Grid styles - CSS Grid layout */
+.vc-gallery-grid {
+    display: grid;
+    padding: 0;
+    margin: 0;
 }
 
 .vc-gallery-thumbnail-button {
-    position: absolute;
     padding: 0;
     border: none;
     background: transparent;
     cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
 }
 
 .vc-gallery-thumbnail-wrapper {
+    width: 100%;
+    aspect-ratio: 1;
     border-radius: 10px;
     overflow: hidden;
     background: var(--background-secondary);
@@ -111,6 +118,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    width: 100%;
 }
 
 .vc-gallery-status {
@@ -141,6 +149,7 @@
     align-items: center;
     justify-content: center;
     padding: 12px;
+    user-select: none;
 }
 
 .vc-gallery-lightbox-image {
@@ -151,12 +160,15 @@
     object-fit: contain;
     border-radius: 12px;
     background: var(--background-secondary);
+    pointer-events: none;
+    z-index: 0;
 }
 
 .vc-gallery-lightbox-zone {
     position: absolute;
     inset: 0;
     pointer-events: none;
+    z-index: 1;
 }
 
 .vc-gallery-lightbox-zone-left {
@@ -225,4 +237,3 @@
     cursor: default;
     pointer-events: none;
 }
-

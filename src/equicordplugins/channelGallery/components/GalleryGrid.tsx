@@ -167,7 +167,7 @@ export function GalleryGrid(props: {
             onScroll={e => {
                 const el = e.currentTarget;
                 const { scrollTop } = el;
-                
+
                 // Don't update viewport scrollTop during selection to prevent jumps
                 if (!isSelectingRef.current) {
                     scrollPositionRef.current = scrollTop;
@@ -193,18 +193,20 @@ export function GalleryGrid(props: {
                                 // Prevent any scroll interference
                                 e.preventDefault();
                                 e.stopPropagation();
-                                
+
                                 // Mark that we're selecting to prevent scroll position changes
                                 isSelectingRef.current = true;
-                                
+
                                 // Save current scroll position before selection
                                 const el = scrollRef.current;
                                 if (el) {
                                     scrollPositionRef.current = el.scrollTop;
                                 }
-                                
+
                                 // Use stable item key to find actual index (prevents index instability)
                                 // If items array changed, find the item by key instead of using virtual idx
+                                if (!items || items.length === 0) return;
+
                                 const actualIndex = items.findIndex(it => it.key === item.key);
                                 if (actualIndex !== -1) {
                                     onSelect(actualIndex);
@@ -212,7 +214,7 @@ export function GalleryGrid(props: {
                                     // Fallback to virtual idx if item not found (shouldn't happen)
                                     onSelect(idx);
                                 }
-                                
+
                                 // Reset flag after a short delay to allow state updates
                                 setTimeout(() => {
                                     isSelectingRef.current = false;

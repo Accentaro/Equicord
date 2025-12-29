@@ -59,9 +59,11 @@ export function GalleryModal(props: ModalProps & { channelId: string; settings: 
     const [loading, setLoading] = useState<boolean>(false);
     const [error, setError] = useState<string | null>(null);
     const [viewerIndex, setViewerIndex] = useState<number | null>(null);
+    const [isFullscreenOpen, setIsFullscreenOpen] = useState<boolean>(false);
 
     const abortRef = useRef<AbortController | null>(null);
     const loadingRef = useRef<boolean>(false);
+    const pendingViewerIndexRef = useRef<number | null>(null);
 
     useEffect(() => {
         return () => abortRef.current?.abort();
@@ -148,25 +150,49 @@ export function GalleryModal(props: ModalProps & { channelId: string; settings: 
         void loadNextChunks(Math.max(1, Math.floor(settings.preloadChunks)));
     }, [channelId, items.length, settings.preloadChunks, loadNextChunks]);
 
+    // Restore viewer when fullscreen closes
+    useEffect(() => {
+        if (!isFullscreenOpen && pendingViewerIndexRef.current !== null) {
+            const indexToRestore = pendingViewerIndexRef.current;
+            pendingViewerIndexRef.current = null;
+
+            // Always use cache.items as source of truth
+            const latestItems = cache.items;
+            const restoredIndex = Math.max(0, Math.min(indexToRestore, latestItems.length - 1));
+
+            // Update items state to match cache, then restore viewer
+            setItems([...latestItems]);
+
+            // Restore viewer index after items update
+            requestAnimationFrame(() => {
+                setViewerIndex(restoredIndex);
+            });
+        }
+    }, [isFullscreenOpen, cache]);
+
     const onCloseAll = () => {
         abortRef.current?.abort();
         modalProps.onClose();
     };
 
-    const viewerItem = viewerIndex != null ? items[viewerIndex] : null;
+    const viewerItem = viewerIndex != null && items && items.length > 0 && viewerIndex < items.length
+        ? items[viewerIndex]
+        : null;
 
     const handleOpenMessage = () => {
-        if (viewerItem) {
-            try {
-                jumper.jumpToMessage({
-                    channelId,
-                    messageId: viewerItem.messageId,
-                    flash: true,
-                    jumpType: "INSTANT"
-                });
-            } finally {
-                onCloseAll();
-            }
+        // Early return if no viewer item
+        if (!viewerItem || !viewerItem.messageId)
+            return;
+
+        try {
+            jumper.jumpToMessage({
+                channelId,
+                messageId: viewerItem.messageId,
+                flash: true,
+                jumpType: "INSTANT"
+            });
+        } finally {
+            onCloseAll();
         }
     };
 
@@ -196,7 +222,9 @@ export function GalleryModal(props: ModalProps & { channelId: string; settings: 
     };
 
     const handleFullscreen = async () => {
-        if (viewerIndex == null || items.length === 0) return;
+        // Early return if invalid state
+        if (viewerIndex == null || !items || items.length === 0)
+            return;
 
         // Load all available images before opening native carousel
         // Since native carousel can't dynamically load more, we need to preload everything
@@ -234,6 +262,10 @@ export function GalleryModal(props: ModalProps & { channelId: string; settings: 
         // Use the latest items from cache
         const allItems = cache.items.length > items.length ? cache.items : items;
 
+        // Early return if no items available
+        if (!allItems || allItems.length === 0)
+            return;
+
         // Convert gallery items to Discord's MediaModalItem format
         const mediaItems: MediaModalItem[] = allItems.map(item => ({
             type: "IMAGE" as const,
@@ -245,11 +277,28 @@ export function GalleryModal(props: ModalProps & { channelId: string; settings: 
             animated: item.filename?.toLowerCase().endsWith(".gif") || item.url.toLowerCase().includes(".gif")
         }));
 
-        // Open Discord's built-in media viewer with all gallery images
+        // Store the current viewer index to restore when fullscreen closes
+        // We know viewerIndex is not null from the early return check above
+        const currentIndex = viewerIndex;
+
+        // Validate starting index is within bounds
+        const validStartingIndex = Math.max(0, Math.min(currentIndex, mediaItems.length - 1));
+
+        // Mark fullscreen as open and close lightbox
+        setIsFullscreenOpen(true);
+        setViewerIndex(null);
+
+        // Open fullscreen modal
         openMediaModal({
             items: mediaItems,
-            startingIndex: viewerIndex,
-            location: "Channel Gallery"
+            startingIndex: validStartingIndex,
+            location: "Channel Gallery",
+            onCloseCallback: () => {
+                // Store the index to restore and clear fullscreen flag
+                // The useEffect will handle the actual restoration
+                pendingViewerIndexRef.current = currentIndex;
+                setIsFullscreenOpen(false);
+            }
         });
     };
 
@@ -321,7 +370,7 @@ export function GalleryModal(props: ModalProps & { channelId: string; settings: 
                         onOpenMessage={onCloseAll}
                         channelId={channelId}
                     />
-                ) : (
+                ) : !isFullscreenOpen ? (
                     <GalleryGrid
                         key={channelId}
                         items={items}
@@ -333,7 +382,7 @@ export function GalleryModal(props: ModalProps & { channelId: string; settings: 
                         onLoadMore={loadNextChunks.bind(null, 1)}
                         onSelect={setViewerIndex}
                     />
-                )}
+                ) : null}
             </ModalContent>
         </ModalRoot>
     );
