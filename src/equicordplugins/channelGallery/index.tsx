@@ -38,14 +38,20 @@ export const settings = definePluginSettings({
     chunkSize: {
         type: OptionType.NUMBER,
         default: 100,
-        description: "Messages fetched per chunk (50–200 recommended)",
-        isValid: v => Number.isFinite(v) && v >= 25 && v <= 200,
+        description: "Messages fetched per chunk (25–100, Discord API limit)",
+        isValid: v => {
+            const num = typeof v === "string" ? Number(v) : v;
+            return Number.isFinite(num) && num >= 25 && num <= 100;
+        },
     },
     preloadChunks: {
         type: OptionType.NUMBER,
         default: 3,
         description: "Chunks to preload when opening (1–5 recommended)",
-        isValid: v => Number.isFinite(v) && v >= 1 && v <= 5,
+        isValid: v => {
+            const num = typeof v === "string" ? Number(v) : v;
+            return Number.isFinite(num) && num >= 1 && num <= 5;
+        },
     }
 });
 
