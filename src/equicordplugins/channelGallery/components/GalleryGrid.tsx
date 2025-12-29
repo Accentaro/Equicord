@@ -1,6 +1,13 @@
-import { Button, React, useEffect, useMemo, useRef, useState } from "@webpack/common";
+/*
+ * Vencord, a Discord client mod
+ * Copyright (c) 2025 Vendicated and contributors
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ */
 
 import "../style.css";
+
+import { Button, React, useEffect, useMemo, useRef, useState } from "@webpack/common";
+
 import type { GalleryItem } from "../utils/extractImages";
 
 const GAP = 10;
@@ -39,6 +46,7 @@ export function GalleryGrid(props: {
 
     const scrollRef = useRef<HTMLDivElement>(null);
     const scrollPositionRef = useRef<number>(0);
+    const isSelectingRef = useRef<boolean>(false);
     const [viewport, setViewport] = useState({ width: 800, height: 600, scrollTop: 0 });
 
     useEffect(() => {
@@ -48,10 +56,10 @@ export function GalleryGrid(props: {
         const updateViewport = () => {
             // Only update if we have actual dimensions
             if (el.clientWidth > 0 && el.clientHeight > 0) {
-                setViewport(v => ({ 
-                    ...v, 
-                    width: el.clientWidth, 
-                    height: el.clientHeight 
+                setViewport(v => ({
+                    ...v,
+                    width: el.clientWidth,
+                    height: el.clientHeight
                 }));
             }
         };
@@ -68,7 +76,7 @@ export function GalleryGrid(props: {
                 }
             });
         });
-        
+
         window.addEventListener("resize", updateViewport);
 
         return () => {
@@ -126,9 +134,9 @@ export function GalleryGrid(props: {
             // Don't check if container isn't ready
             if (el.clientHeight === 0 || el.scrollHeight === 0) return;
 
-            const scrollTop = el.scrollTop;
-            const scrollHeight = el.scrollHeight;
-            const clientHeight = el.clientHeight;
+            const { scrollTop } = el;
+            const { scrollHeight } = el;
+            const { clientHeight } = el;
 
             // Load more when within 600px of bottom
             const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
@@ -140,12 +148,12 @@ export function GalleryGrid(props: {
         };
 
         el.addEventListener("scroll", checkLoadMore);
-        
+
         // Use requestAnimationFrame to ensure DOM is ready
         const rafId = requestAnimationFrame(() => {
             checkLoadMore();
         });
-        
+
         return () => {
             el.removeEventListener("scroll", checkLoadMore);
             cancelAnimationFrame(rafId);
@@ -158,9 +166,18 @@ export function GalleryGrid(props: {
             className="vc-channel-gallery-scroll"
             onScroll={e => {
                 const el = e.currentTarget;
-                const scrollTop = el.scrollTop;
-                scrollPositionRef.current = scrollTop;
-                setViewport(v => ({ ...v, scrollTop }));
+                const { scrollTop } = el;
+                
+                // Don't update viewport scrollTop during selection to prevent jumps
+                if (!isSelectingRef.current) {
+                    scrollPositionRef.current = scrollTop;
+                    setViewport(v => ({ ...v, scrollTop }));
+                } else {
+                    // Restore scroll position if it changed during selection
+                    if (Math.abs(el.scrollTop - scrollPositionRef.current) > 1) {
+                        el.scrollTop = scrollPositionRef.current;
+                    }
+                }
             }}
         >
             <div className="vc-gallery-grid-container" style={{ height: totalHeight }}>
@@ -172,11 +189,39 @@ export function GalleryGrid(props: {
                     return (
                         <button
                             key={item.key}
-                            onClick={(e) => {
+                            onClick={e => {
                                 // Prevent any scroll interference
                                 e.preventDefault();
                                 e.stopPropagation();
-                                onSelect(idx);
+                                
+                                // Mark that we're selecting to prevent scroll position changes
+                                isSelectingRef.current = true;
+                                
+                                // Save current scroll position before selection
+                                const el = scrollRef.current;
+                                if (el) {
+                                    scrollPositionRef.current = el.scrollTop;
+                                }
+                                
+                                // Use stable item key to find actual index (prevents index instability)
+                                // If items array changed, find the item by key instead of using virtual idx
+                                const actualIndex = items.findIndex(it => it.key === item.key);
+                                if (actualIndex !== -1) {
+                                    onSelect(actualIndex);
+                                } else {
+                                    // Fallback to virtual idx if item not found (shouldn't happen)
+                                    onSelect(idx);
+                                }
+                                
+                                // Reset flag after a short delay to allow state updates
+                                setTimeout(() => {
+                                    isSelectingRef.current = false;
+                                }, 100);
+                            }}
+                            onMouseDown={e => {
+                                // Prevent focus/scrollIntoView on button press
+                                // This prevents the browser from scrolling the button into view
+                                e.preventDefault();
                             }}
                             className="vc-gallery-thumbnail-button"
                             style={{
