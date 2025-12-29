@@ -43,7 +43,7 @@ export const settings = definePluginSettings({
     },
     preloadChunks: {
         type: OptionType.NUMBER,
-        default: 2,
+        default: 3,
         description: "Chunks to preload when opening (1–5 recommended)",
         isValid: v => Number.isFinite(v) && v >= 1 && v <= 5,
     }

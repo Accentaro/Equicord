@@ -59,6 +59,7 @@ export function GalleryModal(props: ModalProps & { channelId: string; settings: 
     const [loading, setLoading] = useState<boolean>(false);
     const [error, setError] = useState<string | null>(null);
     const [viewerIndex, setViewerIndex] = useState<number | null>(null);
+    const [initialLoadComplete, setInitialLoadComplete] = useState<boolean>(() => cache.items.length > 0);
 
     const abortRef = useRef<AbortController | null>(null);
     const loadingRef = useRef<boolean>(false);
@@ -143,9 +144,17 @@ export function GalleryModal(props: ModalProps & { channelId: string; settings: 
 
     // Initial load/preload (lazy, only after modal opens).
     useEffect(() => {
-        if (items.length > 0) return;
+        if (items.length > 0) {
+            setInitialLoadComplete(true);
+            return;
+        }
         if (loadingRef.current) return;
-        void loadNextChunks(Math.max(1, Math.floor(settings.preloadChunks)));
+        
+        setInitialLoadComplete(false);
+        void (async () => {
+            await loadNextChunks(Math.max(1, Math.floor(settings.preloadChunks)));
+            setInitialLoadComplete(true);
+        })();
     }, [channelId, items.length, settings.preloadChunks, loadNextChunks]);
 
     const onCloseAll = () => {
@@ -195,11 +204,47 @@ export function GalleryModal(props: ModalProps & { channelId: string; settings: 
         }
     };
 
-    const handleFullscreen = () => {
+    const handleFullscreen = async () => {
         if (viewerIndex == null || items.length === 0) return;
 
+        // Load all available images before opening native carousel
+        // Since native carousel can't dynamically load more, we need to preload everything
+        if (hasMore && !loadingRef.current) {
+            setLoading(true);
+            try {
+                // Load in batches until we have everything
+                let previousItemCount = items.length;
+                let iterations = 0;
+                const maxIterations = 20; // Safety limit
+                
+                while (cache.hasMore && !loadingRef.current && iterations < maxIterations) {
+                    await loadNextChunks(3); // Load 3 chunks at a time
+                    iterations++;
+                    
+                    // Wait a bit for state to update
+                    await new Promise(resolve => setTimeout(resolve, 50));
+                    
+                    // Check if we got more items
+                    const currentItemCount = cache.items.length;
+                    if (currentItemCount === previousItemCount || !cache.hasMore) {
+                        break;
+                    }
+                    previousItemCount = currentItemCount;
+                }
+                
+                // Update items state with all loaded items
+                setItems([...cache.items]);
+                setHasMore(cache.hasMore);
+            } finally {
+                setLoading(false);
+            }
+        }
+
+        // Use the latest items from cache
+        const allItems = cache.items.length > items.length ? cache.items : items;
+        
         // Convert gallery items to Discord's MediaModalItem format
-        const mediaItems: MediaModalItem[] = items.map(item => ({
+        const mediaItems: MediaModalItem[] = allItems.map(item => ({
             type: "IMAGE" as const,
             url: item.proxyUrl || item.url,
             original: item.url,
@@ -285,7 +330,7 @@ export function GalleryModal(props: ModalProps & { channelId: string; settings: 
                         onOpenMessage={onCloseAll}
                         channelId={channelId}
                     />
-                ) : (
+                ) : initialLoadComplete ? (
                     <GalleryGrid
                         items={items}
                         showCaptions={settings.showCaptions}
@@ -296,6 +341,10 @@ export function GalleryModal(props: ModalProps & { channelId: string; settings: 
                         onLoadMore={loadNextChunks.bind(null, 1)}
                         onSelect={setViewerIndex}
                     />
+                ) : (
+                    <div className="vc-gallery-status">
+                        <div className="vc-gallery-status-muted">Loading gallery…</div>
+                    </div>
                 )}
             </ModalContent>
         </ModalRoot>

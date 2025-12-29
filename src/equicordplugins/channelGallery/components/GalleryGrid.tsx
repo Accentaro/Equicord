@@ -38,6 +38,7 @@ export function GalleryGrid(props: {
     const { items, showCaptions, isLoading, hasMore, error, onRetry, onLoadMore, onSelect } = props;
 
     const scrollRef = useRef<HTMLDivElement>(null);
+    const scrollPositionRef = useRef<number>(0);
     const [viewport, setViewport] = useState({ width: 800, height: 600, scrollTop: 0 });
 
     useEffect(() => {
@@ -55,15 +56,49 @@ export function GalleryGrid(props: {
             }
         };
 
-        // Use requestAnimationFrame to ensure element is rendered
-        const rafId = requestAnimationFrame(updateViewport);
+        // Multiple RAF calls to ensure viewport is calculated on first load
+        let raf2: number | null = null;
+        const raf1 = requestAnimationFrame(() => {
+            updateViewport();
+            raf2 = requestAnimationFrame(() => {
+                updateViewport();
+                // Restore scroll position if we had one
+                if (scrollPositionRef.current > 0 && el.scrollTop === 0) {
+                    el.scrollTop = scrollPositionRef.current;
+                }
+            });
+        });
+        
         window.addEventListener("resize", updateViewport);
 
         return () => {
             window.removeEventListener("resize", updateViewport);
-            cancelAnimationFrame(rafId);
+            cancelAnimationFrame(raf1);
+            if (raf2 !== null) cancelAnimationFrame(raf2);
         };
     }, []);
+
+    // Recalculate viewport when items change (especially on initial load)
+    useEffect(() => {
+        const el = scrollRef.current;
+        if (!el || items.length === 0) return;
+
+        // Wait for items to render, then recalculate viewport
+        const raf1 = requestAnimationFrame(() => {
+            const raf2 = requestAnimationFrame(() => {
+                if (el.clientWidth > 0 && el.clientHeight > 0) {
+                    setViewport(v => ({
+                        ...v,
+                        width: el.clientWidth,
+                        height: el.clientHeight
+                    }));
+                }
+            });
+            return () => cancelAnimationFrame(raf2);
+        });
+
+        return () => cancelAnimationFrame(raf1);
+    }, [items.length]);
 
     const usableWidth = Math.max(1, viewport.width - PADDING * 2);
     const columns = Math.max(1, Math.floor((usableWidth + GAP) / (MIN_THUMB + GAP)));
@@ -123,7 +158,9 @@ export function GalleryGrid(props: {
             className="vc-channel-gallery-scroll"
             onScroll={e => {
                 const el = e.currentTarget;
-                setViewport(v => ({ ...v, scrollTop: el.scrollTop }));
+                const scrollTop = el.scrollTop;
+                scrollPositionRef.current = scrollTop;
+                setViewport(v => ({ ...v, scrollTop }));
             }}
         >
             <div className="vc-gallery-grid-container" style={{ height: totalHeight }}>
@@ -135,7 +172,12 @@ export function GalleryGrid(props: {
                     return (
                         <button
                             key={item.key}
-                            onClick={() => onSelect(idx)}
+                            onClick={(e) => {
+                                // Prevent any scroll interference
+                                e.preventDefault();
+                                e.stopPropagation();
+                                onSelect(idx);
+                            }}
                             className="vc-gallery-thumbnail-button"
                             style={{
                                 left: `${col * (cell + GAP)}px`,
