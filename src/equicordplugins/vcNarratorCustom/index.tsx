@@ -112,23 +112,46 @@ async function speak(text: string, { volume, rate, customVoice } = settings.stor
     }
 
     // 3. If not found in either cache, fetch from the TTS API.
-    const response = await fetch(
-        "https://tiktok-tts.weilnet.workers.dev/api/generation",
-        {
-            method: "POST",
-            mode: "cors",
-            cache: "no-cache",
-            credentials: "same-origin",
-            headers: {
-                "Content-Type": "application/json",
-            },
-            referrerPolicy: "no-referrer",
-            body: JSON.stringify({
-                text: text,
-                voice: customVoice,
-            }),
+    let response: Response;
+    try {
+        response = await fetch(
+            "https://tiktok-tts.weilnet.workers.dev/api/generation",
+            {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    text: text,
+                    voice: customVoice,
+                }),
+            }
+        );
+    } catch (error) {
+        console.error("[VcNarratorCustom] Failed to fetch TTS:", error);
+        // If CORS fails, try using a CORS proxy as fallback
+        try {
+            const proxyUrl = `https://corsproxy.io/?${encodeURIComponent("https://tiktok-tts.weilnet.workers.dev/api/generation")}`;
+            response = await fetch(proxyUrl, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    text: text,
+                    voice: customVoice,
+                }),
+            });
+        } catch (proxyError) {
+            console.error("[VcNarratorCustom] CORS proxy also failed:", proxyError);
+            return; // Silently fail if both attempts fail
         }
-    );
+    }
+
+    if (!response.ok) {
+        console.error("[VcNarratorCustom] TTS API returned error:", response.status, response.statusText);
+        return;
+    }
 
     const data = await response.json();
     const audioData = atob(data.data);
