@@ -29,8 +29,8 @@
 
 /* Modal styles */
 .vc-gallery-modal-root {
-    min-width: 1200px !important;
-    min-height: 800px !important;
+    min-width: 30vw !important;
+    min-height: 25vh !important;
     max-width: 90vw !important;
     max-height: 90vh !important;
 }
@@ -365,4 +365,3 @@
 .vc-gallery-embed-link:hover {
     background: var(--brand-600);
 }
-
