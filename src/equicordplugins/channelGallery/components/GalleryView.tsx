@@ -6,8 +6,8 @@
 
 import { Button, React, ScrollerThin, TabBar, useCallback, useEffect, useMemo, useRef, useState } from "@webpack/common";
 
+import { log } from "../utils/logging";
 import type { GalleryItem } from "../utils/media";
-
 const GAP = 10;
 const PADDING = 14;
 const MIN_THUMB = 120;
@@ -92,7 +92,7 @@ export function GalleryView(props: {
     isLoading: boolean;
     hasMore: boolean;
     error: string | null;
-    cache: { failedIds: Set<string> };
+    cache: { failedIds: Set<string>; };
     onRetry(): void;
     onLoadMore(): void;
     onSelect(stableId: string): void;
@@ -134,9 +134,27 @@ export function GalleryView(props: {
     // Calculate grid layout - ensure it's defined before use
     const gridLayout = useMemo(() => {
         const usableWidth = Math.max(1, viewport.width - PADDING * 2);
-        const columns = Math.max(1, Math.floor((usableWidth + GAP) / (MIN_THUMB + GAP)));
-        const cell = Math.max(MIN_THUMB, Math.min(MAX_THUMB, Math.floor((usableWidth - (columns - 1) * GAP) / columns)));
+        const columns = Math.max(
+            1,
+            Math.floor((usableWidth + GAP) / (MIN_THUMB + GAP))
+        );
+        const cell = Math.max(
+            MIN_THUMB,
+            Math.min(
+                MAX_THUMB,
+                Math.floor((usableWidth - (columns - 1) * GAP) / columns)
+            )
+        );
         const thumbSize = Math.max(128, Math.min(512, cell * 2));
+
+        log.debug("grid", "Grid calculation", {
+            viewportWidth: viewport.width,
+            usableWidth,
+            columns,
+            cell,
+            thumbSize
+        });
+
         return { columns, cell, thumbSize };
     }, [viewport.width]);
 
@@ -307,10 +325,10 @@ export function GalleryView(props: {
                                             muted
                                             loop
                                             playsInline
-                                        onError={() => {
-                                            setFailedVideos(prev => new Set(prev).add(item.stableId));
-                                            onMarkFailed(item.stableId);
-                                        }}
+                                            onError={() => {
+                                                setFailedVideos(prev => new Set(prev).add(item.stableId));
+                                                onMarkFailed(item.stableId);
+                                            }}
                                         />
                                     ) : (
                                         <img

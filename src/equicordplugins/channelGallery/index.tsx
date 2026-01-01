@@ -21,6 +21,7 @@ import { ChannelStore, PermissionsBits, PermissionStore, React, SelectedChannelS
 import { openFullscreenView } from "./components/FullscreenView";
 import { GalleryView } from "./components/GalleryView";
 import { SingleView } from "./components/SingleView";
+import { log } from "./utils/logging";
 import { extractImages, GalleryIcon, GalleryItem } from "./utils/media";
 import { fetchMessagesChunk } from "./utils/pagination";
 
@@ -84,10 +85,27 @@ const cacheByChannel = new Map<string, GalleryCache>();
 
 function getOrCreateCache(channelId: string): GalleryCache {
     if (!channelId) {
-        return { items: [], stableIds: new Set(), failedIds: new Set(), oldestMessageId: null, hasMore: true };
+        log.warn("data", "getOrCreateCache called without channelId");
+        return {
+            items: [],
+            stableIds: new Set(),
+            failedIds: new Set(),
+            oldestMessageId: null,
+            hasMore: true
+        };
     }
+
     const existing = cacheByChannel.get(channelId);
-    if (existing) return existing;
+    if (existing) {
+        log.debug("data", "Using existing cache", {
+            channelId,
+            items: existing.items.length
+        });
+        return existing;
+    }
+
+    log.info("data", "Creating new gallery cache", { channelId });
+
     const created: GalleryCache = {
         items: [],
         stableIds: new Set(),
@@ -95,6 +113,7 @@ function getOrCreateCache(channelId: string): GalleryCache {
         oldestMessageId: null,
         hasMore: true
     };
+
     cacheByChannel.set(channelId, created);
     return created;
 }
@@ -128,7 +147,14 @@ let pendingFullscreen: { items: GalleryItem[]; selectedStableId: string; channel
 let isProcessingCloseCallback = false;
 
 function setState(updates: Partial<GalleryState>): void {
+    const prev = globalState;
     globalState = { ...globalState, ...updates };
+
+    log.debug("lifecycle", "Global gallery state updated", {
+        prev,
+        next: globalState
+    });
+
     stateListeners.forEach(listener => listener());
 }
 
@@ -187,6 +213,13 @@ function GalleryModal(props: ModalProps & { channelId: string; settings: typeof 
         if (loadingRef.current) return;
         if (!hasMore) return;
 
+        log.perfStart("load-chunks");
+        log.debug("data", "Loading message chunks", {
+            channelId,
+            chunks,
+            chunkSize: pluginSettings.chunkSize
+        });
+
         loadingRef.current = true;
         setLoading(true);
         setError(null);
@@ -237,6 +270,11 @@ function GalleryModal(props: ModalProps & { channelId: string; settings: typeof 
                 loadedAny = true;
             }
 
+            log.debug("data", "Chunk load complete", {
+                addedItems: cache.items.length,
+                hasMore: localHasMore
+            });
+
             if (loadedAny || !localHasMore) {
                 cache.hasMore = localHasMore;
                 // Filter out failed items when updating
@@ -257,6 +295,7 @@ function GalleryModal(props: ModalProps & { channelId: string; settings: typeof 
         } finally {
             loadingRef.current = false;
             setLoading(false);
+            log.perfEnd("load-chunks");
         }
     }, [channelId, hasMore, pluginSettings.chunkSize, pluginSettings.includeEmbeds, pluginSettings.includeGifs, cache]);
 
@@ -278,6 +317,12 @@ function GalleryModal(props: ModalProps & { channelId: string; settings: typeof 
         if (!localState.selectedStableId) return;
         if (items.length === 0) return;
         if (isOpeningFullscreen) return;
+        log.assert(
+            localState.mode === "single",
+            "lifecycle",
+            "handleFullscreen called outside single mode",
+            localState
+        );
         if (localState.mode !== "single") return;
 
         isOpeningFullscreen = true;
@@ -427,16 +472,23 @@ function GalleryModal(props: ModalProps & { channelId: string; settings: typeof 
 }
 
 function toggleGallery(channelId: string): void {
-    if (!channelId) return;
+    if (!channelId) {
+        log.warn("lifecycle", "toggleGallery called with no channelId");
+        return;
+    }
 
     if (modalKey) {
+        log.debug("lifecycle", "Toggling gallery closed", { channelId });
         closeModal(modalKey);
         modalKey = null;
         setState({ mode: "closed", channelId: null, selectedStableId: null });
         return;
     }
 
+    log.info("lifecycle", "Opening gallery modal", { channelId });
+
     setState({ mode: "gallery", channelId, selectedStableId: null });
+
     modalKey = openModal(
         ErrorBoundary.wrap(modalProps => (
             <GalleryModal
@@ -447,12 +499,15 @@ function toggleGallery(channelId: string): void {
         ), { noop: true }),
         {
             onCloseCallback: () => {
-                if (isProcessingCloseCallback) return;
+                log.debug("lifecycle", "Gallery modal close callback");
 
+                if (isProcessingCloseCallback) return;
                 isProcessingCloseCallback = true;
                 modalKey = null;
 
                 if (pendingFullscreen) {
+                    log.info("lifecycle", "Transitioning to fullscreen view", pendingFullscreen);
+
                     const { items, selectedStableId, channelId: fsChannelId } = pendingFullscreen;
                     pendingFullscreen = null;
                     isOpeningFullscreen = false;
@@ -461,7 +516,10 @@ function toggleGallery(channelId: string): void {
                         items,
                         selectedStableId,
                         () => {
+                            log.debug("lifecycle", "Returning from fullscreen to single view");
+
                             setState({ mode: "single", channelId: fsChannelId, selectedStableId });
+
                             setTimeout(() => {
                                 modalKey = openModal(
                                     ErrorBoundary.wrap(modalProps => (
@@ -473,6 +531,7 @@ function toggleGallery(channelId: string): void {
                                     ), { noop: true }),
                                     {
                                         onCloseCallback: () => {
+                                            log.info("lifecycle", "Gallery fully closed from fullscreen");
                                             modalKey = null;
                                             setState({ mode: "closed", channelId: null, selectedStableId: null });
                                         }
@@ -482,8 +541,10 @@ function toggleGallery(channelId: string): void {
                         }
                     );
                 } else {
+                    log.info("lifecycle", "Gallery closed normally");
                     setState({ mode: "closed", channelId: null, selectedStableId: null });
                 }
+
                 isProcessingCloseCallback = false;
             }
         }
@@ -525,7 +586,7 @@ function GalleryToolbarButton() {
 export default definePlugin({
     name: "ChannelGallery",
     description: "Adds a Gallery view for images in the current channel",
-    authors: [EquicordDevs.benjii],
+    authors: [EquicordDevs.benjii, EquicordDevs.FantasticLoki],
     dependencies: ["HeaderBarAPI"],
 
     settings,
@@ -540,6 +601,10 @@ export default definePlugin({
             predicate: () => !isPluginEnabled("ImageZoom")
         },
     ],
+
+    start() {
+        log.info("lifecycle", "ChannelGallery plugin started");
+    },
 
     handleMediaViewerClick(e: React.MouseEvent) {
         if (!e || e.button !== 0) return;
@@ -568,15 +633,23 @@ export default definePlugin({
     },
 
     stop() {
+        log.info("lifecycle", "ChannelGallery plugin stopping");
+
         cacheByChannel.clear();
+
         if (modalKey) {
+            log.debug("lifecycle", "Closing active gallery modal");
             closeModal(modalKey);
             modalKey = null;
         }
+
         setState({ mode: "closed", channelId: null, selectedStableId: null });
         stateListeners.clear();
+
         isOpeningFullscreen = false;
         pendingFullscreen = null;
         isProcessingCloseCallback = false;
+
+        log.info("lifecycle", "ChannelGallery plugin stopped");
     }
 });

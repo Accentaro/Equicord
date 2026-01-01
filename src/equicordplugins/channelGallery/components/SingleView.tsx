@@ -19,7 +19,7 @@ export function SingleView(props: {
     items: GalleryItem[];
     selectedStableId: string;
     channelId: string;
-    cache: { failedIds: Set<string> };
+    cache: { failedIds: Set<string>; };
     onClose(): void;
     onChange(stableId: string): void;
     onOpenMessage(): void;
@@ -128,7 +128,7 @@ export function SingleView(props: {
         if (!items || items.length === 0) return;
         setVideoFailed(false);
         setImageFailed(false);
-        
+
         // Find next valid items for preloading
         if (hasPrev) {
             for (let i = selectedIndex - 1; i >= 0; i--) {
