@@ -4,7 +4,8 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-import { Button, ListScrollerThin, React, TabBar, useCallback, useEffect, useMemo, useRef, useState } from "@webpack/common";
+import { Button, ListScrollerThin, TabBar, useCallback, useEffect, useMemo, useRef, useState } from "@webpack/common";
+import type { MouseEvent } from "react";
 
 import { log } from "../utils/logging";
 import type { GalleryItem } from "../utils/media";
@@ -87,7 +88,7 @@ function filterItems(items: GalleryItem[], filter: FilterType): GalleryItem[] {
     return filtered;
 }
 
-// Memoized thumbnail component to prevent unnecessary re-renders
+// Thumbnail component
 interface ThumbnailProps {
     item: GalleryItem;
     thumbSize: number;
@@ -97,7 +98,7 @@ interface ThumbnailProps {
     onMarkFailed: (stableId: string) => void;
 }
 
-const ThumbnailItem = React.memo(function ThumbnailItem({
+function ThumbnailItem({
     item,
     thumbSize,
     cell,
@@ -107,7 +108,7 @@ const ThumbnailItem = React.memo(function ThumbnailItem({
 }: ThumbnailProps) {
     const [videoFailed, setVideoFailed] = useState(false);
 
-    const handleClick = useCallback((e: React.MouseEvent) => {
+    const handleClick = useCallback((e: MouseEvent<HTMLButtonElement>) => {
         e.preventDefault();
         e.stopPropagation();
         onSelect(item.stableId);
@@ -159,7 +160,7 @@ const ThumbnailItem = React.memo(function ThumbnailItem({
             )}
         </button>
     );
-});
+}
 
 export function GalleryView(props: {
     items: GalleryItem[];

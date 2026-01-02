@@ -5,7 +5,8 @@
  */
 
 import { findByPropsLazy } from "@webpack";
-import { React, useCallback, useEffect, useMemo, useState } from "@webpack/common";
+import { useCallback, useEffect, useMemo, useState } from "@webpack/common";
+import type { MouseEvent } from "react";
 
 import { log } from "../utils/logging";
 import type { GalleryItem } from "../utils/media";
@@ -144,7 +145,7 @@ export function SingleView(props: {
         preload(nextItem);
     }, [items, selectedIndex, prevItem, nextItem]);
 
-    const handlePrev = (e: React.MouseEvent) => {
+    const handlePrev = (e: MouseEvent<HTMLButtonElement>) => {
         e.preventDefault();
         e.stopPropagation();
         if (hasPrev && prevStableId) {
@@ -152,7 +153,7 @@ export function SingleView(props: {
         }
     };
 
-    const handleNext = (e: React.MouseEvent) => {
+    const handleNext = (e: MouseEvent<HTMLButtonElement>) => {
         e.preventDefault();
         e.stopPropagation();
         if (hasNext && nextStableId) {
