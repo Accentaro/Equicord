@@ -11,7 +11,6 @@ import { isPluginEnabled } from "@api/PluginManager";
 import { definePluginSettings } from "@api/Settings";
 import { Button } from "@components/Button";
 import ErrorBoundary from "@components/ErrorBoundary";
-import { FormSwitch } from "@components/FormSwitch";
 import { Heading } from "@components/Heading";
 import { EquicordDevs } from "@utils/constants";
 import { closeModal, ModalCloseButton, ModalContent, ModalHeader, ModalProps, ModalRoot, ModalSize, openModal } from "@utils/modal";
@@ -73,91 +72,7 @@ export const settings = definePluginSettings({
             const num = typeof v === "string" ? Number(v) : v;
             return Number.isFinite(num) && num >= 1 && num <= 20;
         },
-    }
-    ,
-    /* Debugging controls exposed in the plugin settings. This mirrors
-     * the global `__CHANNEL_GALLERY_DEBUG__` variable so console users
-     * can still toggle debugging, but users can also configure it from
-     * the settings UI. Stored value can be `false`, `true`, or an object
-     * mapping section names to booleans. */
-    debug: {
-        type: OptionType.COMPONENT,
-        default: false,
-        component: ({ setValue }) => {
-            const [state, setState] = React.useState<any>(() => settings.store.debug ?? false);
-
-            const sections = [
-                "grid",
-                "layout",
-                "render",
-                "data",
-                "perf",
-                "lifecycle",
-                "settings",
-                "all"
-            ];
-
-            const computeMaster = (val: any) => {
-                if (val === true) return true;
-                if (typeof val === "object" && val !== null) {
-                    return Object.values(val).some(v => Boolean(v));
-                }
-                return false;
-            };
-
-            const updateGlobal = (v: any) => {
-                try {
-                    (globalThis as any).__CHANNEL_GALLERY_DEBUG__ = v;
-                } catch { }
-            };
-
-            const setMaster = (v: boolean) => {
-                const newVal: any = v;
-                setState(newVal);
-                setValue(newVal);
-                updateGlobal(newVal);
-            };
-
-            const toggleSection = (sec: string) => {
-                const cur = typeof state === "object" && state !== null ? { ...state } : {};
-                cur[sec] = !Boolean(cur[sec]);
-                const every = sections.every(s => Boolean(cur[s]));
-                if (every) cur.all = true;
-                setState(cur);
-                setValue(cur);
-                updateGlobal(cur);
-            };
-
-            return (
-                <div>
-                    <FormSwitch
-                        title="Enable ChannelGallery debug output"
-                        description="Toggle debug logs for ChannelGallery; you can also use the console variable __CHANNEL_GALLERY_DEBUG__"
-                        value={computeMaster(state)}
-                        onChange={setMaster}
-                    />
-
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 8, marginTop: 8 }}>
-                        {sections.map(sec => (
-                            <FormSwitch
-                                key={sec}
-                                title={sec}
-                                description=""
-                                value={typeof state === "object" && state !== null ? Boolean(state[sec]) : Boolean(state)}
-                                onChange={() => toggleSection(sec)}
-                                hideBorder
-                            />
-                        ))}
-                    </div>
-                </div>
-            );
-        },
-        onChange(newVal: any) {
-            try {
-                (globalThis as any).__CHANNEL_GALLERY_DEBUG__ = newVal;
-            } catch { }
-        }
-    }
+    },
 });
 
 // ============================================================
@@ -713,11 +628,6 @@ export default definePlugin({
     ],
 
     start() {
-        // Initialize global debug flag from settings so UI and console interop work
-        try {
-            (globalThis as any).__CHANNEL_GALLERY_DEBUG__ = settings.store.debug ?? false;
-        } catch { }
-
         log.info("lifecycle", "ChannelGallery plugin started");
     },
 
