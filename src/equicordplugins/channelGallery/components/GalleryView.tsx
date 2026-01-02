@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-import { Button, ListScrollerThin, TabBar, useCallback, useEffect, useMemo, useRef, useState } from "@webpack/common";
+import { Button, ListScrollerThin, TabBar, useCallback, useLayoutEffect, useMemo, useRef, useState } from "@webpack/common";
 import type { MouseEvent } from "react";
 
 import { log } from "../utils/logging";
@@ -177,11 +177,11 @@ export function GalleryView(props: {
     const { items, showCaptions, isLoading, hasMore, error, onRetry, onLoadMore, onSelect, onMarkFailed } = props;
 
     const containerRef = useRef<HTMLDivElement>(null);
-    const [viewport, setViewport] = useState({ width: 800, height: 600 });
+    const [viewport, setViewport] = useState({ width: 0, height: 0 });
     const [filter, setFilter] = useState<FilterType>("newest");
 
-    // Initialize and track viewport size
-    useEffect(() => {
+    // Initialize and track viewport size using ResizeObserver and useLayoutEffect
+    useLayoutEffect(() => {
         const container = containerRef.current;
         if (!container) return;
 
@@ -192,10 +192,54 @@ export function GalleryView(props: {
             }
         };
 
-        // Initial measurement with RAF to ensure DOM is ready
-        requestAnimationFrame(updateViewport);
+        // Measure synchronously before paint and observe future size changes
+        updateViewport();
+
+        // Also run a short stability loop to catch layout changes that occur
+        // shortly after mount (modal animations / async layout). We try a few
+        // times with small delays and stop early when width stabilizes.
+        let lastWidth = -1;
+        let stableCount = 0;
+        let attempts = 0;
+        const maxAttempts = 10;
+        let timerId: number | null = null;
+
+        const stabilityCheck = () => {
+            const rect = container.getBoundingClientRect();
+            if (rect.width > 0 && rect.height > 0) {
+                setViewport({ width: rect.width, height: rect.height });
+            }
+
+            if (Math.abs(rect.width - lastWidth) <= 1) {
+                stableCount++;
+            } else {
+                stableCount = 0;
+            }
+
+            lastWidth = rect.width;
+            attempts++;
+
+            if (stableCount >= 2 || attempts >= maxAttempts) return;
+
+            timerId = window.setTimeout(() => requestAnimationFrame(stabilityCheck), 50);
+        };
+
+        stabilityCheck();
+
+        let ro: ResizeObserver | null = null;
+        try {
+            ro = new ResizeObserver(() => updateViewport());
+            ro.observe(container);
+        } catch {
+            ro = null;
+        }
+
         window.addEventListener("resize", updateViewport);
-        return () => window.removeEventListener("resize", updateViewport);
+        return () => {
+            if (timerId !== null) window.clearTimeout(timerId);
+            if (ro) ro.disconnect();
+            window.removeEventListener("resize", updateViewport);
+        };
     }, []);
 
     // Calculate grid layout
