@@ -155,7 +155,7 @@ export function extractImages(
         };
 
         // Extract from attachments
-        const attachments = m.attachments;
+        const { attachments } = m;
         if (Array.isArray(attachments)) {
             for (const a of attachments) {
                 const url = String(a.url ?? "");
@@ -198,7 +198,7 @@ export function extractImages(
 
         // Extract from embeds
         if (opts.includeEmbeds) {
-            let embeds = m.embeds;
+            let { embeds } = m;
             if (typeof embeds === "string") {
                 try {
                     embeds = JSON.parse(embeds);
@@ -255,7 +255,7 @@ export function extractImages(
                     }
 
                     // Handle video in embed
-                    const video = embed.video;
+                    const { video } = embed;
                     if (video && video.url) {
                         const videoUrl = String(video.url);
                         const proxyUrl = video.proxyURL ? String(video.proxyURL) : (video.proxy_url ? String(video.proxy_url) : undefined);
@@ -279,7 +279,7 @@ export function extractImages(
                     }
 
                     // Handle images and thumbnails
-                    const image = embed.image;
+                    const { image } = embed;
                     const thumb = embed.thumbnail;
 
                     for (const source of [image, thumb]) {

@@ -18,16 +18,17 @@ import definePlugin, { OptionType } from "@utils/types";
 import { findByPropsLazy } from "@webpack";
 import { ChannelStore, PermissionsBits, PermissionStore, React, SelectedChannelStore, UserStore, useStateFromStores } from "@webpack/common";
 
-import { openFullscreenView } from "./components/FullscreenView";
 import { GalleryView } from "./components/GalleryView";
 import { SingleView } from "./components/SingleView";
 import { log } from "./utils/logging";
 import { extractImages, GalleryIcon, GalleryItem } from "./utils/media";
 import { fetchMessagesChunk } from "./utils/pagination";
 
-// Note: We don't use ChannelTypes anymore - we rely entirely on Channel class methods
-// which are more reliable and don't require webpack module resolution
 const jumper: any = findByPropsLazy("jumpToMessage");
+
+// ============================================================
+// Settings
+// ============================================================
 
 export const settings = definePluginSettings({
     includeGifs: {
@@ -62,26 +63,62 @@ export const settings = definePluginSettings({
             const num = typeof v === "string" ? Number(v) : v;
             return Number.isFinite(num) && num >= 1 && num <= 5;
         },
+    },
+    maxCachedChannels: {
+        type: OptionType.NUMBER,
+        default: 5,
+        description: "Maximum channels to keep in cache (1–20)",
+        isValid: v => {
+            const num = typeof v === "string" ? Number(v) : v;
+            return Number.isFinite(num) && num >= 1 && num <= 20;
+        },
     }
 });
 
-type ViewMode = "closed" | "gallery" | "single" | "fullscreen";
+// ============================================================
+// Types
+// ============================================================
 
-type GalleryState = {
-    mode: ViewMode;
-    channelId: string | null;
-    selectedStableId: string | null;
-};
+type ViewMode = "gallery" | "single";
 
-type GalleryCache = {
+export type GalleryCache = {
     items: GalleryItem[];
     stableIds: Set<string>;
     failedIds: Set<string>;
     oldestMessageId: string | null;
     hasMore: boolean;
+    lastAccessed: number;
 };
 
+// ============================================================
+// LRU Cache with bounded size
+// ============================================================
+
+const MAX_CACHE_DEFAULT = 5;
 const cacheByChannel = new Map<string, GalleryCache>();
+
+function getMaxCachedChannels(): number {
+    return Math.max(1, Math.min(20, Math.floor(settings.store.maxCachedChannels ?? MAX_CACHE_DEFAULT)));
+}
+
+function evictOldestCache(): void {
+    if (cacheByChannel.size <= getMaxCachedChannels()) return;
+
+    let oldestKey: string | null = null;
+    let oldestTime = Infinity;
+
+    for (const [key, cache] of cacheByChannel) {
+        if (cache.lastAccessed < oldestTime) {
+            oldestTime = cache.lastAccessed;
+            oldestKey = key;
+        }
+    }
+
+    if (oldestKey) {
+        log.debug("data", "Evicting oldest cache", { channelId: oldestKey });
+        cacheByChannel.delete(oldestKey);
+    }
+}
 
 function getOrCreateCache(channelId: string): GalleryCache {
     if (!channelId) {
@@ -91,18 +128,20 @@ function getOrCreateCache(channelId: string): GalleryCache {
             stableIds: new Set(),
             failedIds: new Set(),
             oldestMessageId: null,
-            hasMore: true
+            hasMore: true,
+            lastAccessed: Date.now()
         };
     }
 
     const existing = cacheByChannel.get(channelId);
     if (existing) {
-        log.debug("data", "Using existing cache", {
-            channelId,
-            items: existing.items.length
-        });
+        existing.lastAccessed = Date.now();
+        log.debug("data", "Using existing cache", { channelId, items: existing.items.length });
         return existing;
     }
+
+    // Evict oldest before creating new
+    evictOldestCache();
 
     log.info("data", "Creating new gallery cache", { channelId });
 
@@ -111,16 +150,28 @@ function getOrCreateCache(channelId: string): GalleryCache {
         stableIds: new Set(),
         failedIds: new Set(),
         oldestMessageId: null,
-        hasMore: true
+        hasMore: true,
+        lastAccessed: Date.now()
     };
 
     cacheByChannel.set(channelId, created);
     return created;
 }
 
-function isSupportedChannel(channel: { isDM?: () => boolean; isGroupDM?: () => boolean; isMultiUserDM?: () => boolean; isThread?: () => boolean; isGuildVocal?: () => boolean; isCategory?: () => boolean; guild_id?: string; } | null | undefined): boolean {
+// ============================================================
+// Channel support checks
+// ============================================================
+
+function isSupportedChannel(channel: {
+    isDM?: () => boolean;
+    isGroupDM?: () => boolean;
+    isMultiUserDM?: () => boolean;
+    isThread?: () => boolean;
+    isGuildVocal?: () => boolean;
+    isCategory?: () => boolean;
+    guild_id?: string;
+} | null | undefined): boolean {
     if (!channel) return false;
-    // Support DMs, Group DMs, and Multi-User DMs
     if (typeof channel.isDM === "function" && channel.isDM()) return true;
     if (typeof channel.isGroupDM === "function" && channel.isGroupDM()) return true;
     if (typeof channel.isMultiUserDM === "function" && channel.isMultiUserDM()) return true;
@@ -130,36 +181,44 @@ function isSupportedChannel(channel: { isDM?: () => boolean; isGroupDM?: () => b
     return !!channel.guild_id;
 }
 
-function canUseGallery(channel: { guild_id?: string; isDM?: () => boolean; isGroupDM?: () => boolean; isMultiUserDM?: () => boolean; } | null | undefined): boolean {
+function canUseGallery(channel: {
+    guild_id?: string;
+    isDM?: () => boolean;
+    isGroupDM?: () => boolean;
+    isMultiUserDM?: () => boolean;
+} | null | undefined): boolean {
     if (!channel) return false;
     if (!isSupportedChannel(channel)) return false;
-    // For guild channels, check VIEW_CHANNEL permission
-    // For DMs, no permission check needed
     if (channel.guild_id && !PermissionStore.can(PermissionsBits.VIEW_CHANNEL, channel as any)) return false;
     return true;
 }
 
-let globalState: GalleryState = { mode: "closed", channelId: null, selectedStableId: null };
+// ============================================================
+// Modal state management - simplified
+// ============================================================
+
 let modalKey: string | null = null;
-const stateListeners = new Set<() => void>();
-let isOpeningFullscreen = false;
-let pendingFullscreen: { items: GalleryItem[]; selectedStableId: string; channelId: string; } | null = null;
-let isProcessingCloseCallback = false;
+let currentModalChannelId: string | null = null;
 
-function setState(updates: Partial<GalleryState>): void {
-    const prev = globalState;
-    globalState = { ...globalState, ...updates };
-
-    log.debug("lifecycle", "Global gallery state updated", {
-        prev,
-        next: globalState
-    });
-
-    stateListeners.forEach(listener => listener());
+function closeGalleryModal(): void {
+    if (modalKey) {
+        log.info("lifecycle", "Closing gallery modal");
+        closeModal(modalKey);
+        modalKey = null;
+        currentModalChannelId = null;
+    }
 }
+
+// ============================================================
+// Gallery Modal Component
+// ============================================================
 
 function GalleryModal(props: ModalProps & { channelId: string; settings: typeof settings.store; }) {
     const { channelId, settings: pluginSettings, ...modalProps } = props;
+
+    // View state - local to component
+    const [viewMode, setViewMode] = React.useState<ViewMode>("gallery");
+    const [selectedStableId, setSelectedStableId] = React.useState<string | null>(null);
 
     const channel = ChannelStore.getChannel(channelId);
     let title = "Gallery";
@@ -181,7 +240,6 @@ function GalleryModal(props: ModalProps & { channelId: string; settings: typeof 
     const [hasMore, setHasMore] = React.useState<boolean>(() => cache.hasMore);
     const [loading, setLoading] = React.useState<boolean>(false);
     const [error, setError] = React.useState<string | null>(null);
-    const [localState, setLocalState] = React.useState<GalleryState>(() => globalState);
 
     // Filter out failed images
     const validItems = React.useMemo(() => {
@@ -190,23 +248,19 @@ function GalleryModal(props: ModalProps & { channelId: string; settings: typeof 
 
     const markAsFailed = React.useCallback((stableId: string) => {
         if (!stableId || cache.failedIds.has(stableId)) return;
+        log.debug("data", "Marking item as failed", { stableId });
         cache.failedIds.add(stableId);
-        // Trigger re-render by updating items (validItems will automatically filter via useMemo)
         setItems(prev => prev.filter(item => item.stableId !== stableId));
     }, [cache]);
 
     const abortRef = React.useRef<AbortController | null>(null);
     const loadingRef = React.useRef<boolean>(false);
 
-    // Subscribe to global state changes
+    // Cleanup abort controller on unmount
     React.useEffect(() => {
-        const listener = () => setLocalState({ ...globalState });
-        stateListeners.add(listener);
-        return () => { stateListeners.delete(listener); };
-    }, []);
-
-    React.useEffect(() => {
-        return () => abortRef.current?.abort();
+        return () => {
+            abortRef.current?.abort();
+        };
     }, []);
 
     const loadNextChunks = React.useCallback(async (chunks: number) => {
@@ -277,7 +331,6 @@ function GalleryModal(props: ModalProps & { channelId: string; settings: typeof 
 
             if (loadedAny || !localHasMore) {
                 cache.hasMore = localHasMore;
-                // Filter out failed items when updating
                 setItems([...cache.items.filter(item => !cache.failedIds.has(item.stableId))]);
                 setHasMore(cache.hasMore);
             }
@@ -287,6 +340,7 @@ function GalleryModal(props: ModalProps & { channelId: string; settings: typeof 
                 setLoading(false);
                 return;
             }
+            log.error("data", "Failed to load chunks", e);
             setError("Unable to load gallery items");
             if (cache.items.length === 0) {
                 cache.hasMore = false;
@@ -299,6 +353,7 @@ function GalleryModal(props: ModalProps & { channelId: string; settings: typeof 
         }
     }, [channelId, hasMore, pluginSettings.chunkSize, pluginSettings.includeEmbeds, pluginSettings.includeGifs, cache]);
 
+    // Initial load
     React.useEffect(() => {
         if (items.length > 0) return;
         if (loadingRef.current) return;
@@ -306,47 +361,23 @@ function GalleryModal(props: ModalProps & { channelId: string; settings: typeof 
     }, [channelId, items.length, pluginSettings.preloadChunks, loadNextChunks]);
 
     const handleSelect = React.useCallback((stableId: string) => {
-        setState({ mode: "single", channelId, selectedStableId: stableId });
-    }, [channelId]);
+        log.debug("lifecycle", "Transitioning to single view", { stableId });
+        setSelectedStableId(stableId);
+        setViewMode("single");
+    }, []);
 
     const handleCloseSingle = React.useCallback(() => {
-        setState({ mode: "gallery", channelId, selectedStableId: null });
-    }, [channelId]);
-
-    const handleFullscreen = React.useCallback(() => {
-        if (!localState.selectedStableId) return;
-        if (items.length === 0) return;
-        if (isOpeningFullscreen) return;
-        log.assert(
-            localState.mode === "single",
-            "lifecycle",
-            "handleFullscreen called outside single mode",
-            localState
-        );
-        if (localState.mode !== "single") return;
-
-        isOpeningFullscreen = true;
-        const currentStableId = localState.selectedStableId;
-        const currentChannelId = channelId;
-        const allItems = cache.items.length > items.length ? cache.items : items;
-
-        if (!allItems || allItems.length === 0) {
-            isOpeningFullscreen = false;
-            return;
-        }
-
-        pendingFullscreen = {
-            items: allItems,
-            selectedStableId: currentStableId,
-            channelId: currentChannelId
-        };
-        modalProps.onClose();
-    }, [localState.selectedStableId, localState.mode, items, channelId, cache, modalProps]);
+        log.debug("lifecycle", "Returning from single view to gallery");
+        setSelectedStableId(null);
+        setViewMode("gallery");
+    }, []);
 
     const handleOpenMessage = React.useCallback(() => {
-        if (!localState.selectedStableId) return;
-        const item = items.find(it => it && it.stableId === localState.selectedStableId);
+        if (!selectedStableId) return;
+        const item = validItems.find(it => it && it.stableId === selectedStableId);
         if (!item || !item.messageId) return;
+
+        log.info("lifecycle", "Jump to message and close modal", { messageId: item.messageId });
 
         try {
             jumper.jumpToMessage({
@@ -356,15 +387,16 @@ function GalleryModal(props: ModalProps & { channelId: string; settings: typeof 
                 jumpType: "INSTANT"
             });
         } finally {
+            // Always close modal after jumping
             modalProps.onClose();
         }
-    }, [localState.selectedStableId, items, channelId, modalProps]);
+    }, [selectedStableId, validItems, channelId, modalProps]);
 
     const downloadRef = React.useRef<HTMLAnchorElement | null>(null);
 
     const handleDownload = React.useCallback(async () => {
-        if (!localState.selectedStableId) return;
-        const item = items.find(it => it && it.stableId === localState.selectedStableId);
+        if (!selectedStableId) return;
+        const item = validItems.find(it => it && it.stableId === selectedStableId);
         if (!item || !item.url || !downloadRef.current) return;
 
         try {
@@ -383,25 +415,46 @@ function GalleryModal(props: ModalProps & { channelId: string; settings: typeof 
             downloadRef.current.target = "_blank";
             downloadRef.current.click();
         }
-    }, [localState.selectedStableId, items]);
+    }, [selectedStableId, validItems]);
 
-    const handleClose = React.useCallback((e?: React.MouseEvent | KeyboardEvent) => {
-        if (localState.mode === "single" && localState.channelId === channelId) {
+    const handleFullscreen = React.useCallback(async () => {
+        if (!selectedStableId || validItems.length === 0) return;
+
+        log.info("lifecycle", "Opening fullscreen view", { selectedStableId });
+
+        // Dynamically import to avoid circular dependencies
+        const { openFullscreenView } = await import("./components/FullscreenView");
+
+        openFullscreenView(
+            validItems,
+            selectedStableId,
+            (newStableId: string | null) => {
+                log.debug("lifecycle", "Returning from fullscreen view", { newStableId });
+                if (newStableId) {
+                    setSelectedStableId(newStableId);
+                }
+                // Stay in single view mode
+            }
+        );
+    }, [selectedStableId, validItems]);
+
+    const handleClose = React.useCallback((e?: MouseEvent | KeyboardEvent) => {
+        if (viewMode === "single") {
             e?.preventDefault?.();
             e?.stopPropagation?.();
-            setState({ mode: "gallery", channelId, selectedStableId: null });
+            handleCloseSingle();
             return;
         }
 
         abortRef.current?.abort();
-        setState({ mode: "closed", channelId: null, selectedStableId: null });
+        log.info("lifecycle", "Gallery modal closed");
         modalProps.onClose();
-    }, [localState.mode, localState.channelId, channelId, modalProps]);
+    }, [viewMode, handleCloseSingle, modalProps]);
 
-    // Intercept Escape key and overlay clicks
+    // Keyboard navigation
     React.useEffect(() => {
         const handleEscape = (e: KeyboardEvent) => {
-            if (e.key === "Escape" && (localState.mode === "single" || localState.mode === "gallery")) {
+            if (e.key === "Escape") {
                 e.preventDefault();
                 e.stopPropagation();
                 handleClose(e);
@@ -410,9 +463,9 @@ function GalleryModal(props: ModalProps & { channelId: string; settings: typeof 
 
         window.addEventListener("keydown", handleEscape, true);
         return () => window.removeEventListener("keydown", handleEscape, true);
-    }, [handleClose, localState.mode]);
+    }, [handleClose]);
 
-    const isSingleView = localState.mode === "single" && localState.channelId === channelId;
+    const isSingleView = viewMode === "single";
 
     return (
         <ModalRoot {...modalProps} size={ModalSize.DYNAMIC} aria-label="Gallery" className="vc-gallery-modal-root">
@@ -444,15 +497,15 @@ function GalleryModal(props: ModalProps & { channelId: string; settings: typeof 
                 {isSingleView ? (
                     <SingleView
                         items={validItems}
-                        selectedStableId={localState.selectedStableId!}
+                        selectedStableId={selectedStableId!}
                         channelId={channelId}
                         cache={cache}
                         onClose={handleCloseSingle}
                         onChange={handleSelect}
-                        onOpenMessage={handleClose}
+                        onOpenMessage={handleOpenMessage}
                         onMarkFailed={markAsFailed}
                     />
-                ) : localState.mode === "gallery" ? (
+                ) : (
                     <GalleryView
                         items={validItems}
                         showCaptions={pluginSettings.showCaptions}
@@ -465,11 +518,15 @@ function GalleryModal(props: ModalProps & { channelId: string; settings: typeof 
                         onSelect={handleSelect}
                         onMarkFailed={markAsFailed}
                     />
-                ) : null}
+                )}
             </ModalContent>
         </ModalRoot>
     );
 }
+
+// ============================================================
+// Toggle Gallery
+// ============================================================
 
 function toggleGallery(channelId: string): void {
     if (!channelId) {
@@ -479,15 +536,12 @@ function toggleGallery(channelId: string): void {
 
     if (modalKey) {
         log.debug("lifecycle", "Toggling gallery closed", { channelId });
-        closeModal(modalKey);
-        modalKey = null;
-        setState({ mode: "closed", channelId: null, selectedStableId: null });
+        closeGalleryModal();
         return;
     }
 
     log.info("lifecycle", "Opening gallery modal", { channelId });
-
-    setState({ mode: "gallery", channelId, selectedStableId: null });
+    currentModalChannelId = channelId;
 
     modalKey = openModal(
         ErrorBoundary.wrap(modalProps => (
@@ -499,57 +553,17 @@ function toggleGallery(channelId: string): void {
         ), { noop: true }),
         {
             onCloseCallback: () => {
-                log.debug("lifecycle", "Gallery modal close callback");
-
-                if (isProcessingCloseCallback) return;
-                isProcessingCloseCallback = true;
+                log.info("lifecycle", "Gallery modal close callback");
                 modalKey = null;
-
-                if (pendingFullscreen) {
-                    log.info("lifecycle", "Transitioning to fullscreen view", pendingFullscreen);
-
-                    const { items, selectedStableId, channelId: fsChannelId } = pendingFullscreen;
-                    pendingFullscreen = null;
-                    isOpeningFullscreen = false;
-
-                    openFullscreenView(
-                        items,
-                        selectedStableId,
-                        () => {
-                            log.debug("lifecycle", "Returning from fullscreen to single view");
-
-                            setState({ mode: "single", channelId: fsChannelId, selectedStableId });
-
-                            setTimeout(() => {
-                                modalKey = openModal(
-                                    ErrorBoundary.wrap(modalProps => (
-                                        <GalleryModal
-                                            {...modalProps}
-                                            channelId={fsChannelId}
-                                            settings={settings.store}
-                                        />
-                                    ), { noop: true }),
-                                    {
-                                        onCloseCallback: () => {
-                                            log.info("lifecycle", "Gallery fully closed from fullscreen");
-                                            modalKey = null;
-                                            setState({ mode: "closed", channelId: null, selectedStableId: null });
-                                        }
-                                    }
-                                );
-                            }, 50);
-                        }
-                    );
-                } else {
-                    log.info("lifecycle", "Gallery closed normally");
-                    setState({ mode: "closed", channelId: null, selectedStableId: null });
-                }
-
-                isProcessingCloseCallback = false;
+                currentModalChannelId = null;
             }
         }
     );
 }
+
+// ============================================================
+// Toolbar Button
+// ============================================================
 
 function GalleryToolbarButton() {
     const channelId = useStateFromStores([SelectedChannelStore], () => SelectedChannelStore.getChannelId());
@@ -560,17 +574,18 @@ function GalleryToolbarButton() {
     );
 
     const supported = canUseGallery(channel);
-    const selected = Boolean(modalKey && globalState.channelId === channelId && globalState.mode !== "closed");
+    const selected = Boolean(modalKey && currentModalChannelId === channelId);
 
+    // Close modal if channel changes
     React.useEffect(() => {
-        if (!modalKey || !globalState.channelId || globalState.channelId === channelId) return;
-        closeModal(modalKey);
+        if (!modalKey || !currentModalChannelId || currentModalChannelId === channelId) return;
+        closeGalleryModal();
     }, [channelId]);
 
-    const handleClick = () => {
+    const handleClick = React.useCallback(() => {
         if (!channelId) return;
         toggleGallery(channelId);
-    };
+    }, [channelId]);
 
     return (
         <ChannelToolbarButton
@@ -582,6 +597,10 @@ function GalleryToolbarButton() {
         />
     );
 }
+
+// ============================================================
+// Plugin Definition
+// ============================================================
 
 export default definePlugin({
     name: "ChannelGallery",
@@ -606,7 +625,7 @@ export default definePlugin({
         log.info("lifecycle", "ChannelGallery plugin started");
     },
 
-    handleMediaViewerClick(e: React.MouseEvent) {
+    handleMediaViewerClick(e: MouseEvent) {
         if (!e || e.button !== 0) return;
         try {
             if (e.stopPropagation) e.stopPropagation();
@@ -636,19 +655,7 @@ export default definePlugin({
         log.info("lifecycle", "ChannelGallery plugin stopping");
 
         cacheByChannel.clear();
-
-        if (modalKey) {
-            log.debug("lifecycle", "Closing active gallery modal");
-            closeModal(modalKey);
-            modalKey = null;
-        }
-
-        setState({ mode: "closed", channelId: null, selectedStableId: null });
-        stateListeners.clear();
-
-        isOpeningFullscreen = false;
-        pendingFullscreen = null;
-        isProcessingCloseCallback = false;
+        closeGalleryModal();
 
         log.info("lifecycle", "ChannelGallery plugin stopped");
     }

@@ -5,11 +5,11 @@
  */
 
 import { MediaModalItem, openMediaModal } from "@utils/modal";
-import { findByPropsLazy } from "@webpack";
 
+import { log } from "../utils/logging";
 import type { GalleryItem } from "../utils/media";
 
-// Helper to convert GalleryItem to MediaModalItem (optimized)
+// Helper to convert GalleryItem to MediaModalItem
 function itemToMediaItem(item: GalleryItem): MediaModalItem {
     const isAnimated = item.isAnimated ||
         item.filename?.toLowerCase().endsWith(".gif") ||
@@ -17,7 +17,6 @@ function itemToMediaItem(item: GalleryItem): MediaModalItem {
         item.url.toLowerCase().match(/\.(gif|mp4|webm|mov|m4v)(\?|$)/i) !== null;
 
     // Use original URL for animated media to avoid 415 errors with Discord proxy
-    // Also use original URL for external services that don't support proxy/size params
     let mediaUrl = item.url;
     if (!isAnimated && item.proxyUrl) {
         try {
@@ -41,7 +40,7 @@ function itemToMediaItem(item: GalleryItem): MediaModalItem {
     };
 }
 
-// Preload images for faster navigation
+// Preload images for faster navigation (skip videos)
 function preloadAdjacentImages(items: GalleryItem[], index: number, windowSize: number = 3): void {
     const start = Math.max(0, index - windowSize);
     const end = Math.min(items.length, index + windowSize + 1);
@@ -49,29 +48,38 @@ function preloadAdjacentImages(items: GalleryItem[], index: number, windowSize: 
     for (let i = start; i < end; i++) {
         const item = items[i];
         if (!item) continue;
+        // Skip preloading videos and animated content
+        if (item.isVideo || item.isAnimated || item.isEmbed) continue;
 
         const mediaItem = itemToMediaItem(item);
-        // Preload the image
         const img = new Image();
         img.src = mediaItem.url;
     }
 }
 
-let isOpeningFullscreenView = false;
+let isFullscreenOpen = false;
 
 export function openFullscreenView(
     items: GalleryItem[],
     selectedStableId: string,
-    onClose: () => void
+    onClose: (newStableId: string | null) => void
 ): void {
-    if (isOpeningFullscreenView) return;
-    if (!items || items.length === 0) return;
+    if (isFullscreenOpen) {
+        log.warn("lifecycle", "Fullscreen view already open, ignoring");
+        return;
+    }
+    if (!items || items.length === 0) {
+        log.warn("lifecycle", "No items for fullscreen view");
+        return;
+    }
 
-    isOpeningFullscreenView = true;
+    log.info("lifecycle", "Opening fullscreen view", { selectedStableId, itemCount: items.length });
+    isFullscreenOpen = true;
 
     const selectedIndex = items.findIndex(item => item && item.stableId === selectedStableId);
     const validIndex = selectedIndex >= 0 ? Math.min(selectedIndex, items.length - 1) : 0;
 
+    // Preload adjacent images
     preloadAdjacentImages(items, validIndex, 2);
 
     const mediaItems: MediaModalItem[] = items
@@ -79,67 +87,45 @@ export function openFullscreenView(
         .map(itemToMediaItem);
 
     if (mediaItems.length === 0) {
-        isOpeningFullscreenView = false;
+        log.warn("lifecycle", "No media items for fullscreen view");
+        isFullscreenOpen = false;
         return;
     }
 
     let hasCalledOnClose = false;
+    let currentIndex = validIndex;
+
     const handleClose = () => {
         if (hasCalledOnClose) return;
         hasCalledOnClose = true;
-        isOpeningFullscreenView = false;
-        onClose();
+        isFullscreenOpen = false;
+
+        // Get the stableId of the currently viewed item
+        const currentItem = items[currentIndex];
+        const newStableId = currentItem?.stableId ?? null;
+
+        log.info("lifecycle", "Fullscreen view closed", { newStableId, currentIndex });
+        onClose(newStableId);
     };
 
-    // Fallback: Poll hasModalOpen to detect when modal closes if onCloseCallback doesn't fire
-    const ModalAPIModule = findByPropsLazy("hasModalOpen", "openModal");
-    const MEDIA_MODAL_KEY = "Media Viewer Modal";
-    let wasModalOpen = false;
-    let checkInterval: ReturnType<typeof setInterval> | null = null;
-    let cleanupTimeout: ReturnType<typeof setTimeout> | null = null;
-
-    const cleanupInterval = () => {
-        if (checkInterval) {
-            clearInterval(checkInterval);
-            checkInterval = null;
-        }
-        if (cleanupTimeout) {
-            clearTimeout(cleanupTimeout);
-            cleanupTimeout = null;
-        }
-    };
-
-    const closeCallback = () => {
-        cleanupInterval();
-        handleClose();
-    };
-
-    checkInterval = setInterval(() => {
-        const isModalOpen = ModalAPIModule?.hasModalOpen?.(MEDIA_MODAL_KEY) ?? false;
-
-        if (isModalOpen) {
-            wasModalOpen = true;
-        } else if (wasModalOpen && isOpeningFullscreenView && !hasCalledOnClose) {
-            cleanupInterval();
-            handleClose();
-        }
-    }, 100);
-
-    // Cleanup interval after 60 seconds to prevent memory leaks
-    cleanupTimeout = setTimeout(cleanupInterval, 60000);
-
+    // Track index changes via the media modal's navigation
+    // The modal internally tracks this, we just use the close callback
     openMediaModal({
         items: mediaItems,
         startingIndex: validIndex,
         location: "Channel Gallery",
-        onCloseCallback: closeCallback
+        onCloseCallback: handleClose,
+        onIndexChange: (index: number) => {
+            currentIndex = index;
+            // Preload more images in background
+            preloadAdjacentImages(items, index, 3);
+        }
     });
 
-    // Preload more images in the background (no cleanup needed - fire and forget)
+    // Preload more images in background after initial render
     if (typeof requestIdleCallback !== "undefined") {
         requestIdleCallback(() => preloadAdjacentImages(items, validIndex, 5), { timeout: 1000 });
     } else {
-        // Store timeout for potential cleanup, but it's fire-and-forget so we don't track it
         setTimeout(() => preloadAdjacentImages(items, validIndex, 5), 100);
     }
 }

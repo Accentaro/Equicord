@@ -7,12 +7,17 @@
 import { findByPropsLazy } from "@webpack";
 import { React, useCallback, useEffect, useMemo, useState } from "@webpack/common";
 
+import { log } from "../utils/logging";
 import type { GalleryItem } from "../utils/media";
 
 const jumper: any = findByPropsLazy("jumpToMessage");
 
-function preload(url?: string): void {
-    if (url) new Image().src = url;
+// Only preload images, not videos
+function preload(item: GalleryItem | null | undefined): void {
+    if (!item || !item.url) return;
+    // Skip preloading for videos and embeds
+    if (item.isVideo || item.isEmbed || item.isAnimated) return;
+    new Image().src = item.url;
 }
 
 export function SingleView(props: {
@@ -90,6 +95,7 @@ export function SingleView(props: {
 
     const handleJump = useCallback(() => {
         if (!item || !item.messageId) return;
+        log.info("lifecycle", "Jump to message from SingleView (Enter key)", { messageId: item.messageId });
         try {
             jumper.jumpToMessage({
                 channelId,
@@ -98,6 +104,7 @@ export function SingleView(props: {
                 jumpType: "INSTANT"
             });
         } finally {
+            // Close the entire modal, not just go back to grid
             onOpenMessage();
         }
     }, [item, channelId, onOpenMessage]);
@@ -107,6 +114,7 @@ export function SingleView(props: {
         const onKeyDown = (e: KeyboardEvent) => {
             if (e.key === "Escape") {
                 e.preventDefault();
+                log.debug("lifecycle", "Escape pressed in SingleView - returning to gallery");
                 onClose();
             } else if (e.key === "ArrowLeft" && hasPrev && prevStableId) {
                 e.preventDefault();
@@ -116,6 +124,7 @@ export function SingleView(props: {
                 onChange(nextStableId);
             } else if (e.key === "Enter") {
                 e.preventDefault();
+                // Enter should close modal and jump to message
                 handleJump();
             }
         };
@@ -124,31 +133,16 @@ export function SingleView(props: {
         return () => window.removeEventListener("keydown", onKeyDown);
     }, [hasPrev, hasNext, prevStableId, nextStableId, onClose, onChange, handleJump]);
 
+    // Preload adjacent images (not videos)
     useEffect(() => {
         if (!items || items.length === 0) return;
         setVideoFailed(false);
         setImageFailed(false);
 
-        // Find next valid items for preloading
-        if (hasPrev) {
-            for (let i = selectedIndex - 1; i >= 0; i--) {
-                const prevItem = items[i];
-                if (prevItem && prevItem.url && !cache.failedIds.has(prevItem.stableId)) {
-                    preload(prevItem.url);
-                    break;
-                }
-            }
-        }
-        if (hasNext) {
-            for (let i = selectedIndex + 1; i < items.length; i++) {
-                const nextItem = items[i];
-                if (nextItem && nextItem.url && !cache.failedIds.has(nextItem.stableId)) {
-                    preload(nextItem.url);
-                    break;
-                }
-            }
-        }
-    }, [items, selectedIndex, hasPrev, hasNext, cache.failedIds]);
+        // Preload prev/next valid items (only images)
+        preload(prevItem);
+        preload(nextItem);
+    }, [items, selectedIndex, prevItem, nextItem]);
 
     const handlePrev = (e: React.MouseEvent) => {
         e.preventDefault();
@@ -166,12 +160,53 @@ export function SingleView(props: {
         }
     };
 
+    const handleMediaError = useCallback((isVideo: boolean) => {
+        if (isVideo) {
+            setVideoFailed(true);
+        } else {
+            setImageFailed(true);
+        }
+        onMarkFailed(item.stableId);
+        // Auto-advance to next valid image
+        if (nextStableId) {
+            setTimeout(() => onChange(nextStableId), 100);
+        } else if (prevStableId) {
+            setTimeout(() => onChange(prevStableId), 100);
+        } else {
+            setTimeout(() => onClose(), 100);
+        }
+    }, [item.stableId, nextStableId, prevStableId, onChange, onClose, onMarkFailed]);
+
     const { isVideo, isAnimated, isEmbed, embedUrl } = item;
+
+    // Determine if we should show error state
+    const showError = (isVideo && videoFailed) || (!isVideo && imageFailed);
 
     return (
         <div className="vc-gallery-lightbox">
             <div className="vc-gallery-lightbox-content">
-                {isEmbed && embedUrl ? (
+                {showError ? (
+                    // Error UI when media fails to load
+                    <div className="vc-gallery-media-error">
+                        <div className="vc-gallery-media-error-icon">
+                            <svg width="48" height="48" viewBox="0 0 24 24" fill="none">
+                                <path
+                                    d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"
+                                    fill="currentColor"
+                                />
+                            </svg>
+                        </div>
+                        <p className="vc-gallery-media-error-text">Failed to load media</p>
+                        <a
+                            href={item.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="vc-gallery-media-error-link"
+                        >
+                            Open in browser
+                        </a>
+                    </div>
+                ) : isEmbed && embedUrl ? (
                     <div className="vc-gallery-embed-container">
                         {embedUrl.includes("youtube.com") || embedUrl.includes("youtu.be") ? (
                             <iframe
@@ -205,36 +240,14 @@ export function SingleView(props: {
                         controls
                         autoPlay
                         loop={isAnimated}
-                        onError={() => {
-                            setVideoFailed(true);
-                            onMarkFailed(item.stableId);
-                            // Auto-advance to next valid image
-                            if (nextStableId) {
-                                setTimeout(() => onChange(nextStableId), 100);
-                            } else if (prevStableId) {
-                                setTimeout(() => onChange(prevStableId), 100);
-                            } else {
-                                setTimeout(() => onClose(), 100);
-                            }
-                        }}
+                        onError={() => handleMediaError(true)}
                     />
                 ) : (
                     <img
                         src={item.proxyUrl || item.url}
                         alt={item.filename ?? "Image"}
                         className="vc-gallery-lightbox-image"
-                        onError={() => {
-                            setImageFailed(true);
-                            onMarkFailed(item.stableId);
-                            // Auto-advance to next valid image
-                            if (nextStableId) {
-                                setTimeout(() => onChange(nextStableId), 100);
-                            } else if (prevStableId) {
-                                setTimeout(() => onChange(prevStableId), 100);
-                            } else {
-                                setTimeout(() => onClose(), 100);
-                            }
-                        }}
+                        onError={() => handleMediaError(false)}
                     />
                 )}
             </div>

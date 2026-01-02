@@ -4,15 +4,17 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-import { Button, React, ScrollerThin, TabBar, useCallback, useEffect, useMemo, useRef, useState } from "@webpack/common";
+import { Button, ListScrollerThin, React, TabBar, useCallback, useEffect, useMemo, useRef, useState } from "@webpack/common";
 
 import { log } from "../utils/logging";
 import type { GalleryItem } from "../utils/media";
+
 const GAP = 10;
 const PADDING = 14;
 const MIN_THUMB = 120;
 const MAX_THUMB = 150;
-const LOAD_MORE_THRESHOLD = 600;
+const BUFFER_ROWS = 2;
+const LOAD_MORE_THRESHOLD_ROWS = 3;
 
 type FilterType = "newest" | "oldest" | "animated";
 
@@ -20,16 +22,15 @@ function withSizeParams(url: string, size: number): string {
     if (!url) return url;
     try {
         const u = new URL(url);
-        // Don't add size params to URLs that don't support them
-        // GitHub private images, YouTube, and other external services often don't support size params
         const hostname = u.hostname.toLowerCase();
+        // Don't add size params to URLs that don't support them
         if (hostname.includes("githubusercontent.com") ||
             hostname.includes("youtube.com") ||
             hostname.includes("youtu.be") ||
             hostname.includes("vimeo.com") ||
             hostname.includes("instagram.com") ||
             hostname.includes("tenor.com")) {
-            return url; // Return original URL without size params
+            return url;
         }
         u.searchParams.set("width", String(size));
         u.searchParams.set("height", String(size));
@@ -49,7 +50,7 @@ function getThumbUrl(item: GalleryItem, size: number): string {
         return url;
     }
 
-    // Skip size params for YouTube URLs (including clips) - they don't support it
+    // Skip size params for YouTube URLs
     if (url.includes("youtube.com") || url.includes("youtu.be")) {
         return url;
     }
@@ -86,6 +87,80 @@ function filterItems(items: GalleryItem[], filter: FilterType): GalleryItem[] {
     return filtered;
 }
 
+// Memoized thumbnail component to prevent unnecessary re-renders
+interface ThumbnailProps {
+    item: GalleryItem;
+    thumbSize: number;
+    cell: number;
+    showCaptions: boolean;
+    onSelect: (stableId: string) => void;
+    onMarkFailed: (stableId: string) => void;
+}
+
+const ThumbnailItem = React.memo(function ThumbnailItem({
+    item,
+    thumbSize,
+    cell,
+    showCaptions,
+    onSelect,
+    onMarkFailed
+}: ThumbnailProps) {
+    const [videoFailed, setVideoFailed] = useState(false);
+
+    const handleClick = useCallback((e: React.MouseEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        onSelect(item.stableId);
+    }, [item.stableId, onSelect]);
+
+    const handleVideoError = useCallback(() => {
+        setVideoFailed(true);
+        onMarkFailed(item.stableId);
+    }, [item.stableId, onMarkFailed]);
+
+    const handleImageError = useCallback(() => {
+        onMarkFailed(item.stableId);
+    }, [item.stableId, onMarkFailed]);
+
+    const thumbUrl = getThumbUrl(item, thumbSize);
+    const isVideo = item.isVideo && !item.isEmbed && !videoFailed;
+
+    return (
+        <button
+            onClick={handleClick}
+            onMouseDown={e => e.preventDefault()}
+            className="vc-gallery-thumbnail-button"
+            style={{ width: cell }}
+        >
+            <div className="vc-gallery-thumbnail-wrapper">
+                {isVideo ? (
+                    <video
+                        src={thumbUrl}
+                        className="vc-gallery-thumbnail-image"
+                        muted
+                        loop
+                        playsInline
+                        onError={handleVideoError}
+                    />
+                ) : (
+                    <img
+                        src={thumbUrl}
+                        alt={item.filename ?? "Image"}
+                        loading="lazy"
+                        className="vc-gallery-thumbnail-image"
+                        onError={handleImageError}
+                    />
+                )}
+            </div>
+            {showCaptions && item.filename && (
+                <div className="vc-gallery-caption" title={item.filename}>
+                    {item.filename}
+                </div>
+            )}
+        </button>
+    );
+});
+
 export function GalleryView(props: {
     items: GalleryItem[];
     showCaptions: boolean;
@@ -98,199 +173,149 @@ export function GalleryView(props: {
     onSelect(stableId: string): void;
     onMarkFailed(stableId: string): void;
 }) {
-    const { items, showCaptions, isLoading, hasMore, error, cache, onRetry, onLoadMore, onSelect, onMarkFailed } = props;
+    const { items, showCaptions, isLoading, hasMore, error, onRetry, onLoadMore, onSelect, onMarkFailed } = props;
 
-    const scrollRef = useRef<HTMLDivElement>(null);
-    const scrollTopRef = useRef<number>(0);
-    const rafIdRef = useRef<number | null>(null);
-    const isSelectingRef = useRef<boolean>(false);
-    const loadingTimeoutRef = useRef<number | null>(null);
-    const lastScrollTimeRef = useRef<number>(0);
-    const accelerationRef = useRef<number>(1);
-
+    const containerRef = useRef<HTMLDivElement>(null);
     const [viewport, setViewport] = useState({ width: 800, height: 600 });
     const [filter, setFilter] = useState<FilterType>("newest");
-    const [failedVideos, setFailedVideos] = useState<Set<string>>(new Set());
 
-    // Initialize viewport
+    // Initialize and track viewport size
     useEffect(() => {
-        const el = scrollRef.current;
-        if (!el) return;
+        const container = containerRef.current;
+        if (!container) return;
 
         const updateViewport = () => {
-            if (el.clientWidth > 0 && el.clientHeight > 0) {
-                setViewport({
-                    width: el.clientWidth,
-                    height: el.clientHeight
-                });
+            const rect = container.getBoundingClientRect();
+            if (rect.width > 0 && rect.height > 0) {
+                setViewport({ width: rect.width, height: rect.height });
             }
         };
 
-        updateViewport();
+        // Initial measurement with RAF to ensure DOM is ready
+        requestAnimationFrame(updateViewport);
         window.addEventListener("resize", updateViewport);
         return () => window.removeEventListener("resize", updateViewport);
     }, []);
 
-    // Calculate grid layout - ensure it's defined before use
+    // Calculate grid layout
     const gridLayout = useMemo(() => {
         const usableWidth = Math.max(1, viewport.width - PADDING * 2);
-        const columns = Math.max(
-            1,
-            Math.floor((usableWidth + GAP) / (MIN_THUMB + GAP))
-        );
+        const columns = Math.max(1, Math.floor((usableWidth + GAP) / (MIN_THUMB + GAP)));
         const cell = Math.max(
             MIN_THUMB,
-            Math.min(
-                MAX_THUMB,
-                Math.floor((usableWidth - (columns - 1) * GAP) / columns)
-            )
+            Math.min(MAX_THUMB, Math.floor((usableWidth - (columns - 1) * GAP) / columns))
         );
         const thumbSize = Math.max(128, Math.min(512, cell * 2));
+        // Row height includes gap + caption space if enabled
+        const rowHeight = cell + GAP + (showCaptions ? 24 : 0);
 
         log.debug("grid", "Grid calculation", {
             viewportWidth: viewport.width,
             usableWidth,
             columns,
             cell,
-            thumbSize
+            thumbSize,
+            rowHeight
         });
 
-        return { columns, cell, thumbSize };
-    }, [viewport.width]);
+        return { columns, cell, thumbSize, rowHeight };
+    }, [viewport.width, showCaptions]);
 
-    // Filter items based on selected filter
-    const filteredItems = useMemo(() => {
-        return filterItems(items, filter);
-    }, [items, filter]);
+    // Filter items
+    const filteredItems = useMemo(() => filterItems(items, filter), [items, filter]);
 
-    // Show all filtered items (infinite scroll loads more as needed)
-    const itemsToShow = filteredItems;
+    // Group items into rows for virtualization
+    const { rows, totalRows } = useMemo(() => {
+        const { columns } = gridLayout;
+        const rowsArr: GalleryItem[][] = [];
 
-    // Preload items near the bottom when scrolling
-    useEffect(() => {
-        const el = scrollRef.current;
-        if (!el || filteredItems.length === 0) return;
+        for (let i = 0; i < filteredItems.length; i += columns) {
+            rowsArr.push(filteredItems.slice(i, i + columns));
+        }
 
-        const checkAndPreload = () => {
-            const { scrollTop, clientHeight, scrollHeight } = el;
-            const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
+        return { rows: rowsArr, totalRows: rowsArr.length };
+    }, [filteredItems, gridLayout]);
 
-            if (distanceFromBottom < clientHeight * 2) {
-                const startIndex = Math.max(0, filteredItems.length - 50);
-                const itemsToPreload = filteredItems.slice(startIndex);
+    // Check if we need to load more when approaching bottom
+    const handleRowRender = useCallback((rowIndex: number) => {
+        if (!hasMore || isLoading) return;
 
-                for (const item of itemsToPreload) {
-                    if (item.url) {
-                        const img = new Image();
-                        img.src = getThumbUrl(item, gridLayout.thumbSize);
-                    }
-                }
-            }
-        };
+        const remainingRows = totalRows - rowIndex - 1;
+        if (remainingRows <= LOAD_MORE_THRESHOLD_ROWS) {
+            log.debug("data", "Near bottom, loading more", { rowIndex, totalRows, remainingRows });
+            onLoadMore();
+        }
+    }, [hasMore, isLoading, totalRows, onLoadMore]);
 
-        checkAndPreload();
-        el.addEventListener("scroll", checkAndPreload, { passive: true });
-        return () => el.removeEventListener("scroll", checkAndPreload);
-    }, [filteredItems, gridLayout.thumbSize]);
+    // Render a single row of thumbnails
+    const renderRow = useCallback((rowData: { section: number; row: number; }) => {
+        const rowItems = rows[rowData.row];
+        if (!rowItems) return null;
 
-    // Infinite scroll handler with acceleration
-    const handleScroll = useCallback(() => {
-        if (rafIdRef.current !== null) return;
+        // Trigger load more check
+        handleRowRender(rowData.row);
 
-        rafIdRef.current = requestAnimationFrame(() => {
-            rafIdRef.current = null;
-            const el = scrollRef.current;
-            if (!el || el.clientHeight === 0 || el.scrollHeight === 0) return;
+        return (
+            <div
+                className="vc-gallery-row"
+                style={{
+                    display: "flex",
+                    gap: GAP,
+                    padding: `0 ${PADDING}px`,
+                    height: gridLayout.rowHeight,
+                    alignItems: "flex-start"
+                }}
+            >
+                {rowItems.map(item => (
+                    <ThumbnailItem
+                        key={item.stableId}
+                        item={item}
+                        thumbSize={gridLayout.thumbSize}
+                        cell={gridLayout.cell}
+                        showCaptions={showCaptions}
+                        onSelect={onSelect}
+                        onMarkFailed={onMarkFailed}
+                    />
+                ))}
+            </div>
+        );
+    }, [rows, gridLayout, showCaptions, onSelect, onMarkFailed, handleRowRender]);
 
-            const now = Date.now();
-            const currentScrollTop = el.scrollTop;
-            const lastScrollTop = scrollTopRef.current;
-            const scrollDelta = Math.abs(currentScrollTop - lastScrollTop);
-            const timeDelta = now - lastScrollTimeRef.current;
+    // Render footer with status
+    const renderFooter = useCallback(() => {
+        return (
+            <div className="vc-gallery-status">
+                {error ? (
+                    <div className="vc-gallery-status-error">
+                        {error}{" "}
+                        <Button size={Button.Sizes.SMALL} onClick={onRetry}>
+                            Retry
+                        </Button>
+                    </div>
+                ) : isLoading ? (
+                    <div className="vc-gallery-status-muted">Loading…</div>
+                ) : !filteredItems.length ? (
+                    <div className="vc-gallery-status-muted">
+                        No {filter === "animated" ? "animated " : ""}images found yet
+                    </div>
+                ) : !hasMore && filteredItems.length > 0 ? (
+                    <div className="vc-gallery-status-muted">End of history</div>
+                ) : null}
+            </div>
+        );
+    }, [error, isLoading, filteredItems.length, filter, hasMore, onRetry]);
 
-            // Calculate scroll velocity and acceleration
-            if (timeDelta > 0 && timeDelta < 300) {
-                const velocity = scrollDelta / timeDelta;
-
-                // Increase acceleration if scrolling continues (velocity > threshold)
-                if (velocity > 0.3) {
-                    accelerationRef.current = Math.min(accelerationRef.current * 1.05, 2.5);
-                } else {
-                    accelerationRef.current = Math.max(accelerationRef.current * 0.98, 1);
-                }
-
-                // Apply smooth acceleration using requestAnimationFrame
-                if (accelerationRef.current > 1 && scrollDelta > 5) {
-                    const direction = currentScrollTop > lastScrollTop ? 1 : -1;
-                    const additionalScroll = scrollDelta * (accelerationRef.current - 1) * 0.3;
-                    requestAnimationFrame(() => {
-                        if (el && el === scrollRef.current) {
-                            const newScrollTop = el.scrollTop + (additionalScroll * direction);
-                            el.scrollTop = Math.max(0, Math.min(newScrollTop, el.scrollHeight - el.clientHeight));
-                        }
-                    });
-                }
-            } else {
-                accelerationRef.current = 1;
-            }
-
-            scrollTopRef.current = currentScrollTop;
-            lastScrollTimeRef.current = now;
-
-            const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-
-            // Load more items when near the bottom
-            if (distanceFromBottom < LOAD_MORE_THRESHOLD && distanceFromBottom >= 0 && !isLoading && hasMore) {
-                if (loadingTimeoutRef.current) {
-                    clearTimeout(loadingTimeoutRef.current);
-                }
-                loadingTimeoutRef.current = window.setTimeout(() => {
-                    onLoadMore();
-                }, 100);
-            }
-        });
-    }, [hasMore, isLoading, onLoadMore]);
-
-    useEffect(() => {
-        const el = scrollRef.current;
-        if (!el) return;
-
-        el.addEventListener("scroll", handleScroll, { passive: true });
-        const rafId = requestAnimationFrame(handleScroll);
-
-        return () => {
-            el.removeEventListener("scroll", handleScroll);
-            if (rafIdRef.current !== null) {
-                cancelAnimationFrame(rafIdRef.current);
-                rafIdRef.current = null;
-            }
-            if (loadingTimeoutRef.current) {
-                clearTimeout(loadingTimeoutRef.current);
-                loadingTimeoutRef.current = null;
-            }
-            cancelAnimationFrame(rafId);
-        };
-    }, [handleScroll]);
-
-    const handleThumbClick = useCallback((e: React.MouseEvent, stableId: string) => {
-        e.preventDefault();
-        e.stopPropagation();
-        isSelectingRef.current = true;
-        const el = scrollRef.current;
-        if (el) scrollTopRef.current = el.scrollTop;
-        onSelect(stableId);
-        setTimeout(() => { isSelectingRef.current = false; }, 100);
-    }, [onSelect]);
-
-    const { columns, cell, thumbSize } = gridLayout;
+    const handleFilterChange = useCallback((id: string) => {
+        setFilter(id as FilterType);
+    }, []);
 
     return (
-        <div className="vc-gallery-view-container">
+        <div className="vc-gallery-view-container" ref={containerRef}>
             <TabBar
                 type="top"
                 look="grey"
                 selectedItem={filter}
-                onItemSelect={id => setFilter(id as FilterType)}
+                onItemSelect={handleFilterChange}
                 className="vc-gallery-tabbar"
             >
                 <TabBar.Item id="newest">Newest</TabBar.Item>
@@ -298,78 +323,25 @@ export function GalleryView(props: {
                 <TabBar.Item id="animated">Animated</TabBar.Item>
             </TabBar>
 
-            <ScrollerThin orientation="vertical" className="vc-channel-gallery-scroll">
-                <div
-                    ref={scrollRef}
-                    className="vc-gallery-grid"
-                    style={{
-                        "--vc-gallery-columns": columns,
-                        "--vc-gallery-cell": `${cell}px`
-                    } as React.CSSProperties}
-                >
-                    {itemsToShow.map(item => {
-                        if (!item?.stableId) return null;
-
-                        return (
-                            <button
-                                key={item.stableId}
-                                onClick={e => handleThumbClick(e, item.stableId)}
-                                onMouseDown={e => e.preventDefault()}
-                                className="vc-gallery-thumbnail-button"
-                            >
-                                <div className="vc-gallery-thumbnail-wrapper">
-                                    {item.isVideo && !item.isEmbed && !failedVideos.has(item.stableId) ? (
-                                        <video
-                                            src={getThumbUrl(item, thumbSize)}
-                                            className="vc-gallery-thumbnail-image"
-                                            muted
-                                            loop
-                                            playsInline
-                                            onError={() => {
-                                                setFailedVideos(prev => new Set(prev).add(item.stableId));
-                                                onMarkFailed(item.stableId);
-                                            }}
-                                        />
-                                    ) : (
-                                        <img
-                                            src={getThumbUrl(item, thumbSize)}
-                                            alt={item.filename ?? "Image"}
-                                            loading="lazy"
-                                            className="vc-gallery-thumbnail-image"
-                                            onError={() => {
-                                                onMarkFailed(item.stableId);
-                                            }}
-                                        />
-                                    )}
-                                </div>
-                                {showCaptions && item.filename && (
-                                    <div className="vc-gallery-caption" title={item.filename}>
-                                        {item.filename}
-                                    </div>
-                                )}
-                            </button>
-                        );
-                    })}
+            {totalRows > 0 ? (
+                <ListScrollerThin
+                    className="vc-channel-gallery-scroll"
+                    sections={[totalRows]}
+                    sectionHeight={0}
+                    rowHeight={gridLayout.rowHeight}
+                    renderSection={() => null}
+                    renderRow={renderRow}
+                    renderFooter={renderFooter}
+                    footerHeight={60}
+                    paddingTop={PADDING}
+                    paddingBottom={PADDING}
+                    chunkSize={10}
+                />
+            ) : (
+                <div className="vc-channel-gallery-scroll">
+                    {renderFooter()}
                 </div>
-
-                <div className="vc-gallery-status">
-                    {error ? (
-                        <div className="vc-gallery-status-error">
-                            {error}{" "}
-                            <Button size={Button.Sizes.SMALL} onClick={onRetry}>
-                                Retry
-                            </Button>
-                        </div>
-                    ) : isLoading ? (
-                        <div className="vc-gallery-status-muted">Loading…</div>
-                    ) : !filteredItems.length ? (
-                        <div className="vc-gallery-status-muted">No {filter === "animated" ? "animated " : ""}images found yet</div>
-                    ) : !hasMore && filteredItems.length > 0 ? (
-                        <div className="vc-gallery-status-muted">End of history</div>
-                    ) : null}
-                </div>
-            </ScrollerThin>
-
+            )}
         </div>
     );
 }
