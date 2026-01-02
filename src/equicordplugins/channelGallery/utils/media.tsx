@@ -7,6 +7,8 @@
 import { findComponentByCodeLazy } from "@webpack";
 import { React } from "@webpack/common";
 
+import { log } from "./logging";
+
 const IMAGE_EXTS = new Set(["png", "jpg", "jpeg", "gif", "webp", "avif"]);
 const VIDEO_EXTS = new Set(["mp4", "webm", "mov", "m4v"]);
 const ANIMATED_EXTS = new Set(["gif", "mp4", "webm", "mov", "m4v"]);
@@ -138,6 +140,8 @@ export function extractImages(
 ): GalleryItem[] {
     if (!messages || !Array.isArray(messages)) return [];
 
+    log.debug("data", "Extracting images from messages", { count: messages.length, channelId, includeEmbeds: opts.includeEmbeds });
+
     const items: GalleryItem[] = [];
 
     for (const m of messages) {
@@ -203,6 +207,7 @@ export function extractImages(
                 try {
                     embeds = JSON.parse(embeds);
                 } catch {
+                    log.debug("data", "Failed to parse embeds JSON", { messageId, embeds: embeds });
                     continue;
                 }
             }

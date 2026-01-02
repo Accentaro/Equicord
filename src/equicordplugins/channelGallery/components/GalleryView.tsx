@@ -111,15 +111,18 @@ function ThumbnailItem({
     const handleClick = useCallback((e: MouseEvent<HTMLButtonElement>) => {
         e.preventDefault();
         e.stopPropagation();
+        log.debug("lifecycle", "Thumbnail selected", { stableId: item.stableId });
         onSelect(item.stableId);
     }, [item.stableId, onSelect]);
 
     const handleVideoError = useCallback(() => {
         setVideoFailed(true);
+        log.warn("data", "Thumbnail video failed to load", { stableId: item.stableId });
         onMarkFailed(item.stableId);
     }, [item.stableId, onMarkFailed]);
 
     const handleImageError = useCallback(() => {
+        log.warn("data", "Thumbnail image failed to load", { stableId: item.stableId });
         onMarkFailed(item.stableId);
     }, [item.stableId, onMarkFailed]);
 
@@ -194,6 +197,7 @@ export function GalleryView(props: {
 
         // Measure synchronously before paint and observe future size changes
         updateViewport();
+        log.debug("layout", "Initial viewport measure", { width: container.getBoundingClientRect().width });
 
         // Also run a short stability loop to catch layout changes that occur
         // shortly after mount (modal animations / async layout). We try a few
@@ -208,6 +212,7 @@ export function GalleryView(props: {
             const rect = container.getBoundingClientRect();
             if (rect.width > 0 && rect.height > 0) {
                 setViewport({ width: rect.width, height: rect.height });
+                log.debug("layout", "Viewport updated", { width: rect.width, height: rect.height });
             }
 
             if (Math.abs(rect.width - lastWidth) <= 1) {
@@ -244,6 +249,7 @@ export function GalleryView(props: {
 
     // Calculate grid layout
     const gridLayout = useMemo(() => {
+        log.perfStart("grid-calc");
         const usableWidth = Math.max(1, viewport.width - PADDING * 2);
         const columns = Math.max(1, Math.floor((usableWidth + GAP) / (MIN_THUMB + GAP)));
         const cell = Math.max(
@@ -264,6 +270,7 @@ export function GalleryView(props: {
         });
 
         return { columns, cell, thumbSize, rowHeight };
+        log.perfEnd("grid-calc");
     }, [viewport.width, showCaptions]);
 
     // Filter items
@@ -291,6 +298,11 @@ export function GalleryView(props: {
             onLoadMore();
         }
     }, [hasMore, isLoading, totalRows, onLoadMore]);
+
+    const handleFilterChangeLogged = useCallback((id: string) => {
+        log.info("settings", "Gallery filter changed", { filter: id });
+        setFilter(id as FilterType);
+    }, []);
 
     // Render a single row of thumbnails
     const renderRow = useCallback((rowData: { section: number; row: number; }) => {
@@ -350,9 +362,7 @@ export function GalleryView(props: {
         );
     }, [error, isLoading, filteredItems.length, filter, hasMore, onRetry]);
 
-    const handleFilterChange = useCallback((id: string) => {
-        setFilter(id as FilterType);
-    }, []);
+    const handleFilterChange = handleFilterChangeLogged;
 
     return (
         <div className="vc-gallery-view-container" ref={containerRef}>

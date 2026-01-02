@@ -6,6 +6,8 @@
 
 import { Constants, RestAPI } from "@webpack/common";
 
+import { log } from "./logging";
+
 const FETCH_TIMEOUT_MS = 10_000;
 
 export async function fetchMessagesChunk(args: {
@@ -22,6 +24,7 @@ export async function fetchMessagesChunk(args: {
     }
 
     try {
+        log.perfStart(`fetch-messages:${args.channelId}`);
         const res = await RestAPI.get({
             url: Constants.Endpoints.MESSAGES(args.channelId),
             query: {
@@ -30,6 +33,7 @@ export async function fetchMessagesChunk(args: {
             },
             retries: 1
         });
+        log.perfEnd(`fetch-messages:${args.channelId}`);
 
         if (args.signal && args.signal.aborted) {
             const err = new Error("AbortError");
@@ -49,6 +53,7 @@ export async function fetchMessagesChunk(args: {
             err.name = "AbortError";
             throw err;
         }
+        log.debug("data", "fetchMessagesChunk error", e);
         if (e instanceof Error && (e.name === "AbortError" || e.message === "AbortError")) {
             const err = new Error("AbortError");
             err.name = "AbortError";

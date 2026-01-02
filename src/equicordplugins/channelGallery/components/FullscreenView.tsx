@@ -82,9 +82,11 @@ export function openFullscreenView(
     // Preload adjacent images
     preloadAdjacentImages(items, validIndex, 2);
 
+    log.perfStart("fullscreen-build");
     const mediaItems: MediaModalItem[] = items
         .filter((item): item is GalleryItem => Boolean(item))
         .map(itemToMediaItem);
+    log.perfEnd("fullscreen-build");
 
     if (mediaItems.length === 0) {
         log.warn("lifecycle", "No media items for fullscreen view");
@@ -117,6 +119,7 @@ export function openFullscreenView(
         onCloseCallback: handleClose,
         onIndexChange: (index: number) => {
             currentIndex = index;
+            log.debug("lifecycle", "Fullscreen modal index changed", { index });
             // Preload more images in background
             preloadAdjacentImages(items, index, 3);
         }

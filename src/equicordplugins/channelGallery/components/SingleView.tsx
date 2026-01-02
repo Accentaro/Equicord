@@ -40,6 +40,16 @@ export function SingleView(props: {
         return items.findIndex(item => item && item.stableId === selectedStableId);
     }, [items, selectedStableId]);
 
+    useEffect(() => {
+        // Assert selectedIndex validity in debug builds
+        log.assert(
+            selectedIndex >= 0 && selectedIndex < items.length,
+            "lifecycle",
+            "Selected index out of bounds in SingleView",
+            { selectedIndex, itemsLength: items.length }
+        );
+    }, [selectedIndex, items.length]);
+
     // Auto-advance to next valid image if current one fails or is invalid
     useEffect(() => {
         if (selectedIndex < 0 || selectedIndex >= items.length) {
@@ -70,6 +80,11 @@ export function SingleView(props: {
             }
         }
     }, [selectedIndex, items, selectedStableId, cache.failedIds, onChange, onClose]);
+
+    // Log when selection changes for debugging/navigation tracing
+    useEffect(() => {
+        log.info("lifecycle", "SingleView selection changed", { selectedStableId, selectedIndex });
+    }, [selectedStableId, selectedIndex]);
 
     if (selectedIndex < 0 || selectedIndex >= items.length) return null;
 
@@ -104,6 +119,8 @@ export function SingleView(props: {
                 flash: true,
                 jumpType: "INSTANT"
             });
+        } catch (e: unknown) {
+            log.error("lifecycle", "Failed to jump to message from SingleView", e);
         } finally {
             // Close the entire modal, not just go back to grid
             onOpenMessage();
@@ -149,6 +166,7 @@ export function SingleView(props: {
         e.preventDefault();
         e.stopPropagation();
         if (hasPrev && prevStableId) {
+            log.debug("lifecycle", "Navigate prev in SingleView", { prevStableId });
             onChange(prevStableId);
         }
     };
@@ -157,6 +175,7 @@ export function SingleView(props: {
         e.preventDefault();
         e.stopPropagation();
         if (hasNext && nextStableId) {
+            log.debug("lifecycle", "Navigate next in SingleView", { nextStableId });
             onChange(nextStableId);
         }
     };
@@ -167,6 +186,7 @@ export function SingleView(props: {
         } else {
             setImageFailed(true);
         }
+        log.warn("data", "Media failed in SingleView", { stableId: item.stableId, isVideo });
         onMarkFailed(item.stableId);
         // Auto-advance to next valid image
         if (nextStableId) {
@@ -242,6 +262,7 @@ export function SingleView(props: {
                         autoPlay
                         loop={isAnimated}
                         onError={() => handleMediaError(true)}
+                        onLoadedData={() => log.debug("render", "Video loaded in SingleView", { stableId: item.stableId })}
                     />
                 ) : (
                     <img
@@ -249,6 +270,7 @@ export function SingleView(props: {
                         alt={item.filename ?? "Image"}
                         className="vc-gallery-lightbox-image"
                         onError={() => handleMediaError(false)}
+                        onLoad={() => log.debug("render", "Image loaded in SingleView", { stableId: item.stableId })}
                     />
                 )}
             </div>
