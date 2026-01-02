@@ -17,6 +17,9 @@ const MAX_THUMB = 150;
 const BUFFER_ROWS = 2;
 const LOAD_MORE_THRESHOLD_ROWS = 3;
 
+// Persist loaded thumbnail IDs across mounts to avoid re-showing placeholders
+const loadedThumbs = new Set<string>();
+
 type FilterType = "newest" | "oldest" | "animated";
 
 function withSizeParams(url: string, size: number): string {
@@ -107,6 +110,8 @@ function ThumbnailItem({
     onMarkFailed
 }: ThumbnailProps) {
     const [videoFailed, setVideoFailed] = useState(false);
+    const [loaded, setLoaded] = useState<boolean>(() => loadedThumbs.has(item.stableId));
+    const mediaRef = useRef<HTMLImageElement | HTMLVideoElement | null>(null);
 
     const handleClick = useCallback((e: MouseEvent<HTMLButtonElement>) => {
         e.preventDefault();
@@ -126,6 +131,26 @@ function ThumbnailItem({
         onMarkFailed(item.stableId);
     }, [item.stableId, onMarkFailed]);
 
+    // If the element is cached/ready when mounted, mark as loaded immediately
+    useLayoutEffect(() => {
+        if (loaded) return;
+        const el = mediaRef.current;
+        if (!el) return;
+
+        if (el instanceof HTMLImageElement) {
+            if (el.complete && el.naturalWidth !== 0) {
+                setLoaded(true);
+                loadedThumbs.add(item.stableId);
+            }
+        } else if (el instanceof HTMLVideoElement) {
+            // readyState 3 (HAVE_FUTURE_DATA) or 4 (HAVE_ENOUGH_DATA) indicate playable
+            if (el.readyState >= 3) {
+                setLoaded(true);
+                loadedThumbs.add(item.stableId);
+            }
+        }
+    }, [item.stableId, loaded]);
+
     const thumbUrl = getThumbUrl(item, thumbSize);
     const isVideo = item.isVideo && !item.isEmbed && !videoFailed;
 
@@ -137,22 +162,35 @@ function ThumbnailItem({
             style={{ width: cell }}
         >
             <div className="vc-gallery-thumbnail-wrapper">
+                {/* Placeholder while media loads */}
+                <div
+                    className="vc-gallery-thumbnail-placeholder"
+                    aria-hidden={loaded}
+                    style={{ position: "absolute", inset: 0, opacity: loaded ? 0 : 1, transition: "opacity 160ms ease", pointerEvents: "none" }}
+                />
+
                 {isVideo ? (
                     <video
+                        ref={mediaRef as any}
                         src={thumbUrl}
                         className="vc-gallery-thumbnail-image"
                         muted
                         loop
                         playsInline
+                        onLoadedData={() => { setLoaded(true); loadedThumbs.add(item.stableId); }}
                         onError={handleVideoError}
+                        style={{ opacity: loaded ? 1 : 0, transition: "opacity 160ms ease" }}
                     />
                 ) : (
                     <img
+                        ref={mediaRef as any}
                         src={thumbUrl}
                         alt={item.filename ?? "Image"}
                         loading="lazy"
                         className="vc-gallery-thumbnail-image"
+                        onLoad={() => { setLoaded(true); loadedThumbs.add(item.stableId); }}
                         onError={handleImageError}
+                        style={{ opacity: loaded ? 1 : 0, transition: "opacity 160ms ease" }}
                     />
                 )}
             </div>
