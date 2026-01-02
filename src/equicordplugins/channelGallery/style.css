@@ -89,7 +89,29 @@
     flex-shrink: 0;
     margin: 0;
     padding: 0 16px;
+    display: flex;
     justify-content: center;
+    gap: 10px;
+}
+
+.vc-gallery-tab {
+    position: relative;
+    font-weight: 600;
+    text-transform: none;
+    text-align: center;
+    margin: 0 !important;
+    padding: 0 4px 10px;
+    cursor: pointer;
+    opacity: 0.8;
+    transition:
+        color 120ms ease,
+        opacity 120ms ease,
+        transform 120ms ease !important;
+}
+
+.vc-gallery-tab:hover {
+    opacity: 1;
+    transform: translateY(-1px);
 }
 
 /* ============================================================

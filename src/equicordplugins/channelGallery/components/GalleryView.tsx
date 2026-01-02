@@ -319,9 +319,9 @@ export function GalleryView(props: {
                 onItemSelect={handleFilterChange}
                 className="vc-gallery-tabbar"
             >
-                <TabBar.Item id="newest">Newest</TabBar.Item>
-                <TabBar.Item id="oldest">Oldest</TabBar.Item>
-                <TabBar.Item id="animated">Animated</TabBar.Item>
+                <TabBar.Item className="vc-gallery-tab" id="newest">Newest</TabBar.Item>
+                <TabBar.Item className="vc-gallery-tab" id="oldest">Oldest</TabBar.Item>
+                <TabBar.Item className="vc-gallery-tab" id="animated">Animated</TabBar.Item>
             </TabBar>
 
             {totalRows > 0 ? (
