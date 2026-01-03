@@ -4,7 +4,11 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
+import { Logger } from "@utils/Logger";
+import { perfEnd, perfStart } from "@utils/performance";
 import { Constants, RestAPI } from "@webpack/common";
+
+const logger = new Logger("ChannelGallery", "#8aadf4");
 
 const FETCH_TIMEOUT_MS = 10_000;
 
@@ -22,6 +26,7 @@ export async function fetchMessagesChunk(args: {
     }
 
     try {
+        perfStart(`fetch-messages:${args.channelId}`);
         const res = await RestAPI.get({
             url: Constants.Endpoints.MESSAGES(args.channelId),
             query: {
@@ -30,6 +35,7 @@ export async function fetchMessagesChunk(args: {
             },
             retries: 1
         });
+        perfEnd(`fetch-messages:${args.channelId}`);
 
         if (args.signal && args.signal.aborted) {
             const err = new Error("AbortError");
@@ -49,6 +55,7 @@ export async function fetchMessagesChunk(args: {
             err.name = "AbortError";
             throw err;
         }
+        logger.debug("[data] fetchMessagesChunk error", e);
         if (e instanceof Error && (e.name === "AbortError" || e.message === "AbortError")) {
             const err = new Error("AbortError");
             err.name = "AbortError";

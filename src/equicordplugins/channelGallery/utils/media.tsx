@@ -4,8 +4,11 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
+import { Logger } from "@utils/Logger";
 import { findComponentByCodeLazy } from "@webpack";
 import { React } from "@webpack/common";
+
+const logger = new Logger("ChannelGallery", "#8aadf4");
 
 const IMAGE_EXTS = new Set(["png", "jpg", "jpeg", "gif", "webp", "avif"]);
 const VIDEO_EXTS = new Set(["mp4", "webm", "mov", "m4v"]);
@@ -63,6 +66,31 @@ function isTenorStatic(url: string, contentType?: string): boolean {
         }
     }
     return false;
+}
+
+/**
+ * Extract a base ID from Tenor URLs to match static and animated versions
+ * Example: https://media.tenor.com/uWGaWe1NAmkAAAAe/shoot-air.png
+ *          https://media.tenor.com/uWGaWe1NAmkAAAPo/shoot-air.mp4
+ * Returns: "uWGaWe1NAmk/shoot-air" or null if not a Tenor URL
+ */
+function extractTenorBaseId(url: string): string | null {
+    if (!url || (!url.includes("tenor.com") && !url.includes("media.tenor.com"))) {
+        return null;
+    }
+    try {
+        // Match pattern: media.tenor.com/{id}/{filename}.{ext}
+        const match = url.match(/media\.tenor\.com\/([^/]+)\/([^/?#]+)\./);
+        if (match && match[1] && match[2]) {
+            // Extract just the base ID part (before the variant suffix like AAAAe or AAAPo)
+            const idPart = match[1].replace(/[A-Za-z0-9]{5}$/, ""); // Remove last 5 chars (variant)
+            const filename = match[2];
+            return `${idPart}/${filename}`;
+        }
+    } catch {
+        // Invalid URL, ignore
+    }
+    return null;
 }
 
 function isSpoiler(attachment: any): boolean {
@@ -123,6 +151,8 @@ export type GalleryItem = {
     height?: number;
     filename?: string;
     authorId?: string;
+    authorUsername?: string;
+    authorGlobalName?: string;
     timestamp?: string;
     isAnimated?: boolean;
     isVideo?: boolean;
@@ -138,7 +168,12 @@ export function extractImages(
 ): GalleryItem[] {
     if (!messages || !Array.isArray(messages)) return [];
 
+    logger.debug("[data] Extracting images from messages", { count: messages.length, channelId, includeEmbeds: opts.includeEmbeds });
+
     const items: GalleryItem[] = [];
+    // Track Tenor base IDs to deduplicate static vs animated versions
+    // Maps messageId -> Set of Tenor base IDs that have animated versions
+    const tenorAnimatedByMessage = new Map<string, Set<string>>();
 
     for (const m of messages) {
         if (!m) continue;
@@ -146,17 +181,53 @@ export function extractImages(
         if (!messageId) continue;
 
         const authorId = m.author && m.author.id ? String(m.author.id) : undefined;
+        const authorUsername = m.author && m.author.username ? String(m.author.username) : undefined;
+        const authorGlobalName = m.author && (m.author.global_name || (m.author as any).globalName) ?
+            String(m.author.global_name ?? (m.author as any).globalName) : undefined;
         const timestamp = m.timestamp ? String(m.timestamp) : undefined;
         const base = {
             channelId,
             messageId,
             authorId,
+            authorUsername,
+            authorGlobalName,
             timestamp
         };
 
         // Extract from attachments
-        const attachments = m.attachments;
+        const { attachments } = m;
         if (Array.isArray(attachments)) {
+            // First pass: collect all Tenor animated items
+            const tenorAnimatedIds = new Set<string>();
+            for (const a of attachments) {
+                const url = String(a.url ?? "");
+                if (!url) continue;
+                const isVideo = isVideoAttachment(a);
+                const ext = getExt(a.filename || url);
+                const isAnimated = Boolean(
+                    (ext && isAnimatedExt(ext)) ||
+                    (a.content_type && (a.content_type.toLowerCase() === "image/gif" || a.content_type.toLowerCase().startsWith("video/")))
+                );
+
+                if (isVideo || isAnimated) {
+                    const tenorBaseId = extractTenorBaseId(url);
+                    if (tenorBaseId) {
+                        tenorAnimatedIds.add(tenorBaseId);
+                    }
+                }
+            }
+
+            // Add to message-level tracking
+            if (tenorAnimatedIds.size > 0) {
+                if (!tenorAnimatedByMessage.has(messageId)) {
+                    tenorAnimatedByMessage.set(messageId, new Set());
+                }
+                for (const id of tenorAnimatedIds) {
+                    tenorAnimatedByMessage.get(messageId)!.add(id);
+                }
+            }
+
+            // Second pass: process attachments, skipping static Tenor images if animated exists
             for (const a of attachments) {
                 const url = String(a.url ?? "");
                 if (!url) continue;
@@ -168,6 +239,16 @@ export function extractImages(
                 const isImage = isImageAttachment(a, opts.includeGifs);
 
                 if (!isImage && !isVideo) continue;
+
+                // Skip static Tenor images if we have an animated version
+                const tenorBaseId = extractTenorBaseId(url);
+                if (tenorBaseId && !isVideo) {
+                    const animatedIds = tenorAnimatedByMessage.get(messageId);
+                    if (animatedIds && animatedIds.has(tenorBaseId) && !isAnimatedExt(ext)) {
+                        // We have an animated version, skip this static image
+                        continue;
+                    }
+                }
 
                 const proxyUrl = a.proxy_url ? String(a.proxy_url) : undefined;
                 const width = typeof a.width === "number" ? a.width : undefined;
@@ -198,11 +279,12 @@ export function extractImages(
 
         // Extract from embeds
         if (opts.includeEmbeds) {
-            let embeds = m.embeds;
+            let { embeds } = m;
             if (typeof embeds === "string") {
                 try {
                     embeds = JSON.parse(embeds);
                 } catch {
+                    logger.debug("[data] Failed to parse embeds JSON", { messageId, embeds: embeds });
                     continue;
                 }
             }
@@ -255,7 +337,7 @@ export function extractImages(
                     }
 
                     // Handle video in embed
-                    const video = embed.video;
+                    const { video } = embed;
                     if (video && video.url) {
                         const videoUrl = String(video.url);
                         const proxyUrl = video.proxyURL ? String(video.proxyURL) : (video.proxy_url ? String(video.proxy_url) : undefined);
@@ -263,6 +345,15 @@ export function extractImages(
                         const isTenorStaticPng = isTenorStatic(videoUrl, video.content_type);
 
                         if (isTenorStaticPng) continue;
+
+                        // Track Tenor animated videos
+                        const tenorBaseId = extractTenorBaseId(videoUrl);
+                        if (tenorBaseId) {
+                            if (!tenorAnimatedByMessage.has(messageId)) {
+                                tenorAnimatedByMessage.set(messageId, new Set());
+                            }
+                            tenorAnimatedByMessage.get(messageId)!.add(tenorBaseId);
+                        }
 
                         items.push({
                             ...base,
@@ -279,7 +370,7 @@ export function extractImages(
                     }
 
                     // Handle images and thumbnails
-                    const image = embed.image;
+                    const { image } = embed;
                     const thumb = embed.thumbnail;
 
                     for (const source of [image, thumb]) {
@@ -287,6 +378,16 @@ export function extractImages(
                         const url = String(source.url);
 
                         if (isTenorStatic(url, source.content_type)) continue;
+
+                        // Skip static Tenor images if we already have an animated version
+                        const tenorBaseId = extractTenorBaseId(url);
+                        if (tenorBaseId) {
+                            const animatedIds = tenorAnimatedByMessage.get(messageId);
+                            if (animatedIds && animatedIds.has(tenorBaseId)) {
+                                // We already have an animated version, skip this static image
+                                continue;
+                            }
+                        }
 
                         if (!isImageUrl(url, opts.includeGifs)) continue;
 
@@ -316,6 +417,45 @@ export function extractImages(
                             contentType: source.content_type ? String(source.content_type) : undefined
                         });
                     }
+                }
+            }
+        }
+
+        // Final deduplication pass for this message: prefer animated Tenor versions
+        // This handles cases where static and animated versions might be in different parts
+        const messageItems = items.filter(item => item.messageId === messageId);
+        const tenorItemsByBaseId = new Map<string, GalleryItem[]>();
+
+        for (const item of messageItems) {
+            const tenorBaseId = extractTenorBaseId(item.url);
+            if (tenorBaseId) {
+                if (!tenorItemsByBaseId.has(tenorBaseId)) {
+                    tenorItemsByBaseId.set(tenorBaseId, []);
+                }
+                tenorItemsByBaseId.get(tenorBaseId)!.push(item);
+            }
+        }
+
+        // Collect static items to remove (when animated version exists)
+        const staticItemsToRemove = new Set<string>();
+        for (const [baseId, baseItems] of tenorItemsByBaseId) {
+            if (baseItems.length <= 1) continue;
+
+            const hasAnimated = baseItems.some(item => item.isAnimated || item.isVideo);
+            if (hasAnimated) {
+                // Mark static items for removal (keep only animated/video ones)
+                const staticItems = baseItems.filter(item => !item.isAnimated && !item.isVideo);
+                for (const staticItem of staticItems) {
+                    staticItemsToRemove.add(staticItem.stableId);
+                }
+            }
+        }
+
+        // Remove static items
+        if (staticItemsToRemove.size > 0) {
+            for (let i = items.length - 1; i >= 0; i--) {
+                if (staticItemsToRemove.has(items[i].stableId)) {
+                    items.splice(i, 1);
                 }
             }
         }
