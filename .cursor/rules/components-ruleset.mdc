@@ -1,0 +1,348 @@
+---
+alwaysApply: true
+---
+
+# Equicord Components Ruleset
+
+**CRITICAL**: Always use existing components from `src/components/` instead of creating custom UI components. These components provide consistent styling, accessibility, and maintainability.
+
+## Import Path
+
+All components are exported from `src/components/index.ts`. Import them like:
+```typescript
+import { ComponentName } from "@components";
+```
+
+---
+
+## Core UI Components
+
+### ErrorBoundary
+
+**USE**: `ErrorBoundary` from `@components/ErrorBoundary`
+
+**Available features:**
+- `ErrorBoundary` - React error boundary component
+- `ErrorBoundary.wrap(Component, props?)` - Wrap component with error boundary
+- Props: `noop`, `fallback`, `onError`, `message`
+
+**DO NOT**: Create custom error boundaries
+
+```typescript
+import ErrorBoundary from "@components/ErrorBoundary";
+
+// Wrap a component
+const SafeComponent = ErrorBoundary.wrap(MyComponent, {
+    message: "Failed to render MyComponent"
+});
+
+// Use as component
+<ErrorBoundary onError={(e) => logger.error(e)}>
+    <MyComponent />
+</ErrorBoundary>
+```
+
+---
+
+### Button Components
+
+**USE**: `Button`, `LinkButton`, `TextButton` from `@components/Button`
+
+**Available components:**
+- `Button` - Standard button with variants
+- `LinkButton` - Button styled as link
+- `TextButton` - Text-only button
+- Variants: `primary`, `secondary`, `dangerPrimary`, `dangerSecondary`, `overlayPrimary`, `positive`, `link`, `none`
+- Sizes: `min`, `xs`, `small`, `medium`
+
+**DO NOT**: Create custom button components
+
+```typescript
+import { Button, LinkButton, TextButton } from "@components";
+
+<Button variant="primary" size="medium" onClick={handleClick}>
+    Click Me
+</Button>
+
+<LinkButton href="https://example.com" variant="link">
+    External Link
+</LinkButton>
+
+<TextButton variant="primary" onClick={handleClick}>
+    Text Button
+</TextButton>
+```
+
+---
+
+### Card Component
+
+**USE**: `Card` from `@components/Card`
+
+**Available props:**
+- `variant` - `normal` | `warning` | `danger`
+- `defaultPadding` - Add default padding (auto if no className)
+
+**DO NOT**: Create custom card containers
+
+```typescript
+import { Card } from "@components";
+
+<Card variant="normal">
+    <h2>Card Title</h2>
+    <p>Card content</p>
+</Card>
+
+<Card variant="warning" defaultPadding={false}>
+    Warning content
+</Card>
+```
+
+---
+
+### Text Components
+
+**USE**: `BaseText`, `Heading`, `Paragraph`, `Span` from `@components`
+
+**Available components:**
+- `BaseText` - Base text component with size/weight/color props
+- `Heading` - Heading component
+- `Paragraph` - Paragraph component
+- `Span` - Inline span component
+- Text sizes: `xxs`, `xs`, `sm`, `md`, `lg`, `xl`, `xxl`
+- Text weights: `thin`, `extralight`, `light`, `normal`, `medium`, `semibold`, `bold`, `extrabold`
+- Text colors: `text-default`, `text-muted`, `text-link`, `text-danger`, `text-brand`, `text-strong`, `text-subtle`
+
+**DO NOT**: Create custom text styling components
+
+```typescript
+import { BaseText, Heading, Paragraph, Span } from "@components";
+
+<BaseText size="lg" weight="bold" color="text-strong">
+    Large Bold Text
+</BaseText>
+
+<Heading>Main Heading</Heading>
+
+<Paragraph size="sm" color="text-muted">
+    Small muted paragraph
+</Paragraph>
+
+<Span size="md" weight="medium">Inline text</Span>
+```
+
+---
+
+### Form Components
+
+**USE**: `FormSwitch`, `Switch`, `CheckedTextInput` from `@components`
+
+**Available components:**
+- `FormSwitch` - Switch with title and description
+- `Switch` - Basic switch component
+- `CheckedTextInput` - Text input with validation
+
+**DO NOT**: Create custom form controls
+
+```typescript
+import { FormSwitch, Switch } from "@components";
+
+<FormSwitch
+    title="Enable Feature"
+    description="This will enable the feature"
+    value={enabled}
+    onChange={setEnabled}
+/>
+
+<Switch checked={value} onChange={setValue} />
+```
+
+---
+
+### Layout Components
+
+**USE**: `Flex`, `Grid`, `Divider` from `@components`
+
+**Available components:**
+- `Flex` - Flexbox container
+- `Grid` - Grid container
+- `Divider` - Horizontal divider
+
+**DO NOT**: Create custom layout components
+
+```typescript
+import { Flex, Grid, Divider } from "@components";
+
+<Flex flexDirection="column" gap="8px">
+    <div>Item 1</div>
+    <div>Item 2</div>
+</Flex>
+
+<Grid columns={3} gap="16px">
+    <div>Column 1</div>
+    <div>Column 2</div>
+    <div>Column 3</div>
+</Grid>
+
+<Divider />
+```
+
+---
+
+### Other Components
+
+**USE**: Available components from `@components`
+
+**Available:**
+- `Link` - Styled link component
+- `CodeBlock` - Code block component
+- `Notice` - Notice/alert component
+- `ErrorCard` - Error display card
+- `Heart` - Heart icon component
+- `Icons` - Icon components
+
+**DO NOT**: Recreate these components
+
+```typescript
+import { Link, CodeBlock, Notice, ErrorCard } from "@components";
+
+<Link href="https://example.com">External Link</Link>
+
+<CodeBlock language="typescript" code="const x = 1;" />
+
+<Notice type="info">Information notice</Notice>
+
+<ErrorCard>Error message here</ErrorCard>
+```
+
+---
+
+### Margin Utilities
+
+**USE**: `Margins` from `@components/margins`
+
+**Available classes:**
+- `Margins.top8`, `Margins.top16`, `Margins.top20`
+- `Margins.bottom8`, `Margins.bottom16`, `Margins.bottom20`
+- `Margins.left8`, `Margins.left16`, `Margins.left20`
+- `Margins.right8`, `Margins.right16`, `Margins.right20`
+
+**DO NOT**: Create custom margin classes
+
+```typescript
+import { Margins } from "@components/margins";
+
+<div className={Margins.top16}>
+    Content with top margin
+</div>
+```
+
+---
+
+## Settings Components
+
+**USE**: Settings components from `@components/settings`
+
+**Available:**
+- Settings tab components
+- Plugin card components
+- Theme card components
+- Quick action components
+- Addon card components
+
+**DO NOT**: Create custom settings UI components
+
+```typescript
+// These are typically used internally by the settings system
+// Import from @components/settings if needed
+```
+
+---
+
+## General Guidelines
+
+1. **Always check `@components` first** before creating UI components
+2. **Use consistent styling** - Components follow design system
+3. **Accessibility** - Components include proper ARIA attributes
+4. **Type safety** - All components are fully typed
+5. **Composition** - Combine components instead of creating new ones
+6. **Error handling** - Use ErrorBoundary for error-prone components
+
+---
+
+## Common Mistakes to Avoid
+
+❌ **DON'T**: Create custom button components
+```typescript
+// BAD
+const MyButton = ({ onClick, children }) => (
+    <button onClick={onClick} className="my-button">
+        {children}
+    </button>
+);
+
+// GOOD
+import { Button } from "@components";
+<Button onClick={onClick}>{children}</Button>
+```
+
+❌ **DON'T**: Create custom text styling
+```typescript
+// BAD
+<div style={{ fontSize: "1rem", fontWeight: "bold" }}>Text</div>
+
+// GOOD
+import { BaseText } from "@components";
+<BaseText size="md" weight="bold">Text</BaseText>
+```
+
+❌ **DON'T**: Create custom cards
+```typescript
+// BAD
+<div className="my-card" style={{ padding: "1em", background: "..." }}>
+    Content
+</div>
+
+// GOOD
+import { Card } from "@components";
+<Card>Content</Card>
+```
+
+❌ **DON'T**: Skip error boundaries
+```typescript
+// BAD
+<MyComponent /> // No error handling
+
+// GOOD
+import ErrorBoundary from "@components/ErrorBoundary";
+<ErrorBoundary>
+    <MyComponent />
+</ErrorBoundary>
+```
+
+❌ **DON'T**: Create custom form controls
+```typescript
+// BAD
+<input type="checkbox" checked={value} onChange={e => setValue(e.target.checked)} />
+
+// GOOD
+import { FormSwitch } from "@components";
+<FormSwitch title="Enable" value={value} onChange={setValue} />
+```
+
+---
+
+## When to Create New Components
+
+Only create new components if:
+1. The functionality doesn't exist in `@components`
+2. It's a plugin-specific component that won't be reused
+3. It's a complex composite component unique to your plugin
+4. You've confirmed no similar component exists
+
+If you create a new component:
+- Follow existing component patterns
+- Use existing utilities (`classNameFactory`, `classes`, etc.)
+- Include proper TypeScript types
+- Add error boundaries if needed
+- Consider contributing it back if reusable

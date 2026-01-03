@@ -1,0 +1,599 @@
+---
+alwaysApply: true
+---
+
+# Equicord Webpack Ruleset
+
+**CRITICAL**: Always use webpack utilities from `@webpack` instead of directly accessing Discord's webpack internals. These utilities provide safe, tested, and maintainable ways to find and use Discord modules.
+
+## Import Path
+
+All webpack utilities are exported from `@webpack`. Import them like:
+```typescript
+import { utilityName } from "@webpack";
+// or
+import { ComponentName } from "@webpack/common";
+```
+
+---
+
+## Core Webpack Utilities
+
+### Finding Modules
+
+**USE**: Webpack finder functions from `@webpack`
+
+**Available functions:**
+- `find(filter)` - Find first module matching filter
+- `findAll(filter)` - Find all modules matching filter
+- `findBulk(...filters)` - Find multiple modules at once
+- `findByProps(...props)` - Find module with properties
+- `findByCode(...code)` - Find function with code
+- `findModuleId(...code)` - Find module ID by code
+- `findModuleFactory(...code)` - Find module factory by code
+- `findStore(name)` - Find Flux store by name
+- `findComponentByCode(...code)` - Find React component by code
+
+**Lazy versions:**
+- `findLazy(filter)` - Lazy find
+- `findByPropsLazy(...props)` - Lazy findByProps
+- `findByCodeLazy(...code)` - Lazy findByCode
+- `findStoreLazy(name)` - Lazy findStore
+- `findComponentByCodeLazy(...code)` - Lazy findComponentByCode
+- `findExportedComponentLazy(...props)` - Lazy find exported component
+
+**DO NOT**: Directly access `window.webpackChunkdiscord_app` or `wreq`
+
+```typescript
+import { findByProps, findByCode, findStore } from "@webpack";
+
+// Find module by properties
+const UserStore = findByProps("getUser", "getCurrentUser");
+
+// Find function by code
+const sendMessage = findByCode("MESSAGE_CREATE", "channelId:");
+
+// Find store
+const ChannelStore = findStore("ChannelStore");
+
+// Lazy find (recommended for performance)
+const UserStoreLazy = findByPropsLazy("getUser");
+```
+
+---
+
+### Filters
+
+**USE**: `filters` from `@webpack`
+
+**Available filters:**
+- `filters.byProps(...props)` - Filter by properties
+- `filters.byCode(...code)` - Filter by code strings/regex
+- `filters.byStoreName(name)` - Filter by store displayName
+- `filters.componentByCode(...code)` - Filter React components by code
+
+**DO NOT**: Create custom filter functions
+
+```typescript
+import { filters, find } from "@webpack";
+
+// Find by properties
+const module = find(filters.byProps("getUser", "getCurrentUser"));
+
+// Find component by code
+const Component = find(filters.componentByCode("useState", "useEffect"));
+```
+
+---
+
+### Waiting for Modules
+
+**USE**: `waitFor` from `@webpack`
+
+**Available:**
+- `waitFor(filter, callback)` - Wait for module to load
+- `waitForComponent(name, filter, fallback?)` - Wait for component
+- `waitForStore(name, callback)` - Wait for store
+
+**DO NOT**: Poll for modules or use setTimeout
+
+```typescript
+import { waitFor } from "@webpack";
+
+waitFor(["getUser", "getCurrentUser"], (UserStore) => {
+    // Module is now available
+    console.log(UserStore.getCurrentUser());
+});
+
+// Wait for component
+import { waitForComponent } from "@webpack/common/internal";
+const MyComponent = waitForComponent("MyComponent", filters.componentByCode("..."));
+```
+
+---
+
+### Mangled Modules
+
+**USE**: `mapMangledModule` and `mapMangledModuleLazy` from `@webpack`
+
+**Available:**
+- `mapMangledModule(code, mappers, includeBlacklisted?)` - Map mangled module
+- `mapMangledModuleLazy(code, mappers, includeBlacklisted?)` - Lazy version
+
+**DO NOT**: Try to manually demangle Discord modules
+
+```typescript
+import { mapMangledModuleLazy, filters } from "@webpack";
+
+const ModalAPI = mapMangledModuleLazy(".modalKey?", {
+    openModal: filters.byCode(".modalKey?"),
+    closeModal: filters.byCode(".onCloseCallback()"),
+    closeAllModals: filters.byCode(".getState();for")
+});
+```
+
+---
+
+### Chunk Loading
+
+**USE**: `extractAndLoadChunks` from `@webpack`
+
+**Available:**
+- `extractAndLoadChunks(code, matcher?)` - Extract and load lazy chunks
+- `extractAndLoadChunksLazy(code, matcher?)` - Lazy version
+
+**DO NOT**: Manually load webpack chunks
+
+```typescript
+import { extractAndLoadChunks } from "@webpack";
+
+// Load chunks for a feature
+await extractAndLoadChunks(["lazy chunk loading code"]);
+```
+
+---
+
+### Proxy Lazy Webpack
+
+**USE**: `proxyLazyWebpack` and `LazyComponentWebpack` from `@webpack`
+
+**Available:**
+- `proxyLazyWebpack(factory, attempts?)` - Create lazy proxy for webpack
+- `LazyComponentWebpack(factory, attempts?)` - Create lazy component
+
+**DO NOT**: Use regular `proxyLazy` for webpack modules (use these instead for reporter tracking)
+
+```typescript
+import { proxyLazyWebpack, LazyComponentWebpack } from "@webpack";
+
+// Lazy proxy (for reporter tracking)
+const Module = proxyLazyWebpack(() => findByProps("something"));
+
+// Lazy component (for reporter tracking)
+const LazyModal = LazyComponentWebpack(() => findByCode("Modal"));
+```
+
+---
+
+### Search Utilities
+
+**USE**: `search` and `extract` from `@webpack`
+
+**Available:**
+- `search(...code)` - Search module factories by keyword
+- `extract(id)` - Extract module to separate source file (dev only)
+
+**DO NOT**: Manually search webpack internals
+
+```typescript
+import { search, extract } from "@webpack";
+
+// Search for modules
+const results = search("getUser", "getCurrentUser");
+
+// Extract module for debugging (dev only)
+const extracted = extract(12345);
+```
+
+---
+
+## Webpack Common
+
+**USE**: `@webpack/common` for Discord components, stores, and utilities
+
+**Available exports:**
+- React components (Button, TextInput, Select, etc.)
+- Flux stores (UserStore, ChannelStore, etc.)
+- Utilities (FluxDispatcher, RestAPI, etc.)
+- Menu components
+- React hooks
+
+**DO NOT**: Directly import from Discord's webpack
+
+```typescript
+import { 
+    Button, 
+    TextInput, 
+    UserStore, 
+    ChannelStore,
+    FluxDispatcher,
+    React,
+    useState,
+    useEffect
+} from "@webpack/common";
+```
+
+---
+
+### Discord Components
+
+**USE**: Components from `@webpack/common`
+
+**Available components:**
+- `Button`, `TextInput`, `TextArea`, `Select`, `SearchableSelect`
+- `Slider`, `Popout`, `Dialog`, `TabBar`, `Paginator`
+- `Clickable`, `Avatar`, `ColorPicker`, `UserSummaryItem`
+- `ScrollerThin`, `ScrollerAuto`, `ListScrollerThin`, `ListScrollerAuto`
+- `FocusLock`, `MaskedLink`, `Timestamp`, `OAuth2AuthorizeModal`
+- `Animations.Transition`, `Animations.animated`
+
+**DO NOT**: Find Discord components manually
+
+```typescript
+import { Button, TextInput, Select, Avatar } from "@webpack/common";
+
+<Button onClick={handleClick}>Click Me</Button>
+<TextInput value={text} onChange={setText} />
+<Select options={options} value={selected} onChange={setSelected} />
+<Avatar src={avatarUrl} size={32} />
+```
+
+---
+
+### Flux Stores
+
+**USE**: Stores from `@webpack/common/stores`
+
+**Available stores:**
+- `UserStore`, `ChannelStore`, `GuildStore`, `MessageStore`
+- `SelectedChannelStore`, `SelectedGuildStore`
+- `GuildMemberStore`, `PermissionStore`, `PresenceStore`
+- `ReadStateStore`, `TypingStore`, `VoiceStateStore`
+- `EmojiStore`, `StickersStore`, `ThemeStore`, `WindowStore`
+- `DraftStore`, `StreamerModeStore`, `SpotifyStore`
+- And many more...
+
+**DO NOT**: Find stores manually
+
+```typescript
+import { 
+    UserStore, 
+    ChannelStore, 
+    MessageStore,
+    useStateFromStores 
+} from "@webpack/common";
+
+// Get current user
+const user = UserStore.getCurrentUser();
+
+// Get channel
+const channel = ChannelStore.getChannel(channelId);
+
+// Use in React component
+function MyComponent() {
+    const user = useStateFromStores([UserStore], () => UserStore.getCurrentUser());
+    return <div>{user.username}</div>;
+}
+```
+
+---
+
+### Flux Dispatcher
+
+**USE**: `FluxDispatcher` from `@webpack/common`
+
+**Available:**
+- `FluxDispatcher.dispatch(action)` - Dispatch action
+- `FluxDispatcher.subscribe(event, handler)` - Subscribe to event
+- `FluxDispatcher.unsubscribe(event, handler)` - Unsubscribe
+
+**DO NOT**: Directly access Discord's Flux
+
+```typescript
+import { FluxDispatcher } from "@webpack/common";
+
+// Dispatch action
+FluxDispatcher.dispatch({
+    type: "MESSAGE_SEND",
+    channelId: "123",
+    message: { content: "Hello" }
+});
+
+// Subscribe to events
+const handler = (event) => console.log(event);
+FluxDispatcher.subscribe("MESSAGE_CREATE", handler);
+
+// Cleanup
+FluxDispatcher.unsubscribe("MESSAGE_CREATE", handler);
+```
+
+---
+
+### React from Webpack
+
+**USE**: `React`, hooks from `@webpack/common/react`
+
+**Available:**
+- `React` - React library
+- `useState`, `useEffect`, `useLayoutEffect`, `useMemo`
+- `useRef`, `useReducer`, `useCallback`
+- `ReactDOM`, `createRoot`
+
+**DO NOT**: Import React from other sources in webpack context
+
+```typescript
+import { React, useState, useEffect } from "@webpack/common";
+
+function MyComponent() {
+    const [count, setCount] = useState(0);
+    
+    useEffect(() => {
+        console.log("Count changed:", count);
+    }, [count]);
+    
+    return <div>{count}</div>;
+}
+```
+
+---
+
+### Menu Components
+
+**USE**: `Menu` from `@webpack/common/menu`
+
+**Available components:**
+- `Menu.Menu` - Main menu component
+- `Menu.MenuItem` - Menu item
+- `Menu.MenuCheckboxItem` - Checkbox menu item
+- `Menu.MenuRadioItem` - Radio menu item
+- `Menu.MenuSliderControl` - Slider control
+- `Menu.MenuSearchControl` - Search control
+- `ContextMenuApi` - Context menu API
+
+**DO NOT**: Find menu components manually
+
+```typescript
+import { Menu, ContextMenuApi } from "@webpack/common";
+
+<Menu.Menu>
+    <Menu.MenuItem
+        id="my-item"
+        label="My Item"
+        action={() => console.log("Clicked")}
+    />
+    <Menu.MenuCheckboxItem
+        id="my-checkbox"
+        label="My Checkbox"
+        checked={checked}
+        action={() => setChecked(!checked)}
+    />
+</Menu.Menu>
+```
+
+---
+
+### Utilities
+
+**USE**: Utilities from `@webpack/common/utils`
+
+**Available:**
+- `FluxDispatcher` - Event dispatcher
+- `RestAPI` - Discord REST API client
+- `Constants` - Discord constants (Endpoints, UserFlags, etc.)
+- `moment` - Moment.js library
+- `hljs` - Highlight.js library
+- `lodash` - Lodash library
+- `i18n` - Internationalization
+- `SnowflakeUtils` - Snowflake ID utilities
+- `Parser` - Message parser
+- `Alerts` - Alert system
+- `Toasts` - Toast notifications
+- `UserUtils` - User utilities
+- `UploadManager`, `UploadHandler` - File upload
+- `ApplicationAssetUtils` - Application assets
+- `NavigationRouter`, `ChannelRouter` - Navigation
+- `SettingsRouter` - Settings navigation
+- `PermissionsBits` - Permission bits
+- `MessageActions` - Message actions
+- `MessageCache` - Message cache
+- `UserProfileActions` - User profile actions
+- `InviteActions` - Invite actions
+- `ChannelActionCreators` - Channel actions
+- `VoiceActions` - Voice actions
+- `GuildActions` - Guild actions
+- `ChannelActions` - Channel actions
+- `IconUtils` - Icon utilities
+- `ReadStateUtils` - Read state utilities
+- `ExpressionPickerStore` - Expression picker
+- `PopoutActions` - Popout actions
+- `UsernameUtils` - Username utilities
+- `DisplayProfileUtils` - Display profile utilities
+- `DateUtils` - Date utilities
+- `MessageTypeSets` - Message type sets
+
+**DO NOT**: Find these utilities manually
+
+```typescript
+import { 
+    RestAPI, 
+    Constants, 
+    Toasts, 
+    MessageActions,
+    UserUtils,
+    IconUtils
+} from "@webpack/common";
+
+// Make API call
+const response = await RestAPI.get({
+    url: Constants.Endpoints.USER_PROFILE(userId)
+});
+
+// Show toast
+Toasts.show({
+    message: "Success!",
+    type: Toasts.Type.SUCCESS,
+    id: Toasts.genId()
+});
+
+// Send message
+MessageActions.sendMessage(channelId, {
+    content: "Hello!"
+});
+
+// Get user
+const user = await UserUtils.getUser(userId);
+
+// Get avatar URL
+const avatarUrl = IconUtils.getUserAvatarURL(user, true, 128);
+```
+
+---
+
+### Classes
+
+**USE**: `ButtonWrapperClasses` and other class objects from `@webpack/common/classes`
+
+**Available:**
+- `ButtonWrapperClasses` - Button wrapper classes
+
+**DO NOT**: Hardcode Discord class names
+
+```typescript
+import { ButtonWrapperClasses } from "@webpack/common";
+
+<div className={ButtonWrapperClasses.buttonWrapper}>
+    Content
+</div>
+```
+
+---
+
+## General Guidelines
+
+1. **Always use lazy finders** when possible for better performance
+2. **Use `@webpack/common`** for Discord components and stores
+3. **Wait for modules** instead of assuming they're loaded
+4. **Use filters** instead of custom filter functions
+5. **Clean up subscriptions** - Unsubscribe from Flux events
+6. **Type safety** - All webpack utilities are typed
+7. **Error handling** - Handle cases where modules might not be found
+
+---
+
+## Common Mistakes to Avoid
+
+❌ **DON'T**: Directly access webpack internals
+```typescript
+// BAD
+const module = window.webpackChunkdiscord_app[0][1](12345);
+
+// GOOD
+import { findByProps } from "@webpack";
+const module = findByProps("getUser");
+```
+
+❌ **DON'T**: Use non-lazy finders in hot paths
+```typescript
+// BAD (in render function)
+function Component() {
+    const UserStore = findByProps("getUser"); // Runs every render
+    return <div>{UserStore.getCurrentUser().username}</div>;
+}
+
+// GOOD
+import { findByPropsLazy } from "@webpack";
+const UserStore = findByPropsLazy("getUser");
+
+function Component() {
+    const user = UserStore.getCurrentUser();
+    return <div>{user.username}</div>;
+}
+```
+
+❌ **DON'T**: Find stores manually
+```typescript
+// BAD
+const UserStore = findByProps("getUser", "getCurrentUser");
+
+// GOOD
+import { UserStore } from "@webpack/common";
+const user = UserStore.getCurrentUser();
+```
+
+❌ **DON'T**: Hardcode module IDs
+```typescript
+// BAD
+const module = wreq(12345);
+
+// GOOD
+import { findByProps } from "@webpack";
+const module = findByProps("something");
+```
+
+❌ **DON'T**: Poll for modules
+```typescript
+// BAD
+let module;
+const interval = setInterval(() => {
+    module = findByProps("getUser");
+    if (module) clearInterval(interval);
+}, 100);
+
+// GOOD
+import { waitFor } from "@webpack";
+waitFor(["getUser"], (UserStore) => {
+    // Module is available
+});
+```
+
+❌ **DON'T**: Forget to unsubscribe
+```typescript
+// BAD
+FluxDispatcher.subscribe("MESSAGE_CREATE", handler);
+// Never unsubscribes
+
+// GOOD
+import { FluxDispatcher } from "@webpack/common";
+
+// In component
+useEffect(() => {
+    FluxDispatcher.subscribe("MESSAGE_CREATE", handler);
+    return () => FluxDispatcher.unsubscribe("MESSAGE_CREATE", handler);
+}, []);
+```
+
+---
+
+## Performance Tips
+
+1. **Use lazy finders** - They only evaluate when first accessed
+2. **Use `findBulk`** - More efficient than multiple `find` calls
+3. **Cache results** - Store found modules in variables
+4. **Use `waitFor`** - Don't poll for modules
+5. **Prefer `@webpack/common`** - Pre-found and optimized
+
+---
+
+## When to Use Direct Webpack Access
+
+Only use direct webpack access if:
+1. The utility doesn't exist in `@webpack`
+2. You need to patch module factories
+3. You're debugging and need to inspect internals
+4. You've confirmed no utility exists for your use case
+
+If you must use direct access:
+- Use `wreq` from `@webpack` (not `window.webpackChunkdiscord_app`)
+- Use `cache` from `@webpack` for module cache
+- Always handle cases where modules might not exist
+- Document why direct access is necessary

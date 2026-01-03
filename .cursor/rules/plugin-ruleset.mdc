@@ -1,0 +1,870 @@
+---
+alwaysApply: true
+---
+
+# Equicord Plugin Development Ruleset
+
+This document provides comprehensive guidelines for creating Equicord plugins. For detailed API, utility, component, and webpack usage, refer to the specialized rulesets.
+
+## Table of Contents
+
+1. [Plugin Structure](#plugin-structure)
+2. [Using Existing APIs & Utilities](#using-existing-apis--utilities)
+3. [Common Patterns](#common-patterns)
+4. [Prohibited Practices](#prohibited-practices)
+5. [Code Quality Patterns](#code-quality-patterns)
+6. [TypeScript Guidelines](#typescript-guidelines)
+7. [Styling Guidelines](#styling-guidelines)
+8. [Error Handling](#error-handling)
+9. [Lifecycle Management](#lifecycle-management)
+10. [Pre-Push Requirements](#pre-push-requirements)
+11. [Code Quality Checklist](#code-quality-checklist)
+
+---
+
+## Plugin Structure
+
+### File Organization
+
+```
+src/equicordplugins/<pluginName>/
+├── index.tsx              # Main plugin file
+├── components/            # React components (optional)
+│   └── ComponentName.tsx
+├── utils/                 # Utility functions (optional)
+│   └── helper.ts
+└── style.css              # Stylesheet (optional)
+```
+
+**Rules:**
+- Plugins **must** live in `src/equicordplugins/<pluginName>/`
+- Keep the plugin surface small: prefer `index.tsx` + optional `components/` + optional `utils/` + optional `style.css`
+- Do not create unnecessary subdirectories
+- Group related functionality in the same file when possible
+
+### Plugin Definition
+
+```typescript
+export default definePlugin({
+    name: "PluginName",
+    description: "Clear, concise description of what the plugin does",
+    authors: [Devs.Ven, EquicordDevs.YourName],
+    dependencies: ["RequiredPlugin"], // Optional
+    settings, // Optional
+    patches: [ /* ... */ ],
+    contextMenus: { /* ... */ },
+    start() { /* ... */ },
+    stop() { /* ... */ },
+});
+```
+
+**Rules:**
+- Use descriptive names that clearly indicate functionality
+- List all contributors in `authors`
+- Declare dependencies if your plugin requires other plugins
+- Keep descriptions concise but informative
+
+---
+
+## Using Existing APIs & Utilities
+
+**CRITICAL**: Always use existing APIs and utilities instead of creating custom implementations.
+
+### Reference Rulesets
+
+For detailed usage, refer to these specialized rulesets:
+
+1. **`@api` Ruleset** (`.cursor/rules/api-ruleset.mdc`)
+   - Plugin registration APIs (Commands, Badges, ContextMenu)
+   - UI extension APIs (ChatButtons, HeaderBar, UserArea, etc.)
+   - Event & Message APIs
+   - Storage & Settings APIs
+   - Style & Theme APIs
+   - Notification & Audio APIs
+
+2. **`@utils` Ruleset** (`.cursor/rules/ruleset.mdc`)
+   - Core utilities (Logger, React hooks, lazy loading)
+   - Discord-specific utilities
+   - Modal, clipboard, CSS, text utilities
+   - Type guards, queues, and more
+
+3. **`@components` Ruleset** (`.cursor/rules/components-ruleset.mdc`)
+   - ErrorBoundary, Button, Card, Text components
+   - Form components, Layout components
+   - Margin utilities and more
+
+4. **`@webpack` Ruleset** (`.cursor/rules/webpack-ruleset.mdc`)
+   - Module finding utilities
+   - Discord components, stores, utilities
+   - React integration, menu components
+
+### Quick Reference
+
+```typescript
+// ✅ DO - Use existing APIs
+import { Commands } from "@api";
+import { DataStore } from "@api/DataStore";
+import { Button } from "@components";
+import { findByPropsLazy } from "@webpack";
+import { Logger, copyWithToast } from "@utils";
+
+// ❌ DON'T - Create custom implementations
+// Don't create custom command registration
+// Don't use localStorage directly
+// Don't create custom button components
+// Don't access webpack directly
+// Don't create custom logging utilities
+```
+
+---
+
+## Common Patterns
+
+### 1. Patching Discord Code
+
+**Pattern:**
+```typescript
+patches: [
+    {
+        find: "unique string in Discord code",
+        replacement: {
+            match: /regex pattern/,
+            replace: "replacement string"
+        },
+        predicate: () => settings.store.enableFeature, // Optional
+        all: true // Optional, for multiple matches
+    }
+]
+```
+
+**Best Practices:**
+- Use `find` to locate a unique, stable string in Discord's code
+- Keep regex patterns minimal and specific
+- Use `predicate` to conditionally apply patches based on settings
+- **Prefer one reliable patch over multiple fallback patches**
+- Avoid `noWarn: true` unless the patch is intentionally optional and safe to miss
+- If using `noWarn`, add a comment explaining why missing the patch is acceptable
+- **Combine related patches** when they target the same module (use multiple `replacement` entries)
+
+**Cross-Plugin Compatibility:**
+- If a patch conflicts with another plugin, gate it with `predicate`:
+  ```typescript
+  predicate: () => !isPluginEnabled("OtherPluginName")
+  ```
+- Never silently override another plugin's handler
+- Prefer adding your own handler rather than editing existing handlers
+
+**Regex Escaping:**
+- Always escape special regex characters: `.*+?^${}()|[\]\`
+- Test patches thoroughly to ensure escaping is correct
+
+### 2. Context Menus
+
+**Pattern:**
+```typescript
+import { ContextMenu } from "@api";
+import { Menu } from "@webpack/common";
+
+const contextMenuPatch: NavContextMenuPatchCallback = (children, props) => {
+    if (!props.user) return;
+
+    const menuItem = (
+        <Menu.MenuItem
+            id="vc-plugin-action"
+            label="Action Label"
+            action={() => { /* action */ }}
+            icon={SomeIcon}
+        />
+    );
+
+    const group = ContextMenu.findGroupChildrenByChildId("existing-menu-id", children);
+    if (group) {
+        group.push(menuItem);
+    } else {
+        children.push(menuItem);
+    }
+};
+
+export default definePlugin({
+    contextMenus: {
+        "user-context": contextMenuPatch,
+    }
+});
+```
+
+**Best Practices:**
+- Use `ContextMenu.findGroupChildrenByChildId` to find existing menu groups
+- Insert items into appropriate groups when possible
+- Use unique `id` values prefixed with `vc-` or your plugin name
+- Check for required props before adding menu items
+
+### 3. Flux Dispatcher Subscriptions
+
+**Pattern:**
+```typescript
+import { FluxDispatcher } from "@webpack/common";
+
+export default definePlugin({
+    flux: {
+        CHANNEL_SELECT(data) {
+            // Handle event
+        },
+        MESSAGE_CREATE(data) {
+            // Handle event
+        }
+    },
+
+    // OR for manual subscriptions:
+    start() {
+        FluxDispatcher.subscribe("EVENT_NAME", handler);
+    },
+    stop() {
+        FluxDispatcher.unsubscribe("EVENT_NAME", handler);
+    }
+});
+```
+
+**Best Practices:**
+- Prefer `flux` object for simple subscriptions (auto-managed)
+- Use manual `subscribe`/`unsubscribe` in `start`/`stop` for complex logic
+- **Always unsubscribe** in `stop()` to prevent memory leaks
+- Store handler references if needed for cleanup
+
+### 4. Webpack Module Discovery
+
+**Pattern:**
+```typescript
+import { findByPropsLazy, findComponentByCodeLazy, findStoreLazy } from "@webpack";
+import { UserStore, ChannelStore } from "@webpack/common"; // Prefer common exports
+
+const SomeStore = findStoreLazy("StoreName");
+const SomeComponent = findComponentByCodeLazy("unique code string");
+const { someFunction } = findByPropsLazy("someFunction");
+```
+
+**Best Practices:**
+- **Prefer `@webpack/common` exports** when available (pre-found and optimized)
+- Use lazy finders (`findByPropsLazy`, `findStoreLazy`, etc.) for better performance
+- Use `findByPropsLazy` for functions, constants, and objects
+- Use `findComponentByCodeLazy` for React components
+- Use `findStoreLazy` for Discord stores
+- Keep patterns minimal and avoid over-discovery
+
+### 5. Tooltips
+
+**Pattern:**
+```typescript
+import { Tooltip } from "@webpack/common";
+
+<Tooltip text="Tooltip text">
+    {tooltipProps => (
+        <div {...tooltipProps}>
+            {/* Your content */}
+        </div>
+    )}
+</Tooltip>
+```
+
+**Best Practices:**
+- Use `Tooltip` component directly with render prop pattern
+- Use `tooltipText` prop for simple tooltips on buttons/components
+- For complex tooltips, use `Tooltip` with custom content
+
+### 6. React Components in Plugins
+
+**Pattern:**
+```typescript
+import ErrorBoundary from "@components/ErrorBoundary";
+import { React } from "@webpack/common";
+
+export default definePlugin({
+    renderComponent(props) {
+        return (
+            <ErrorBoundary noop>
+                <YourComponent {...props} />
+            </ErrorBoundary>
+        );
+    }
+});
+```
+
+**Best Practices:**
+- Wrap injected components with `ErrorBoundary`
+- Use `ErrorBoundary.wrap()` for function components
+- Use `noop: true` for non-critical components that can fail silently
+- Use proper React hooks appropriately
+- Avoid inline styles for layout (use CSS classes)
+
+### 7. Settings
+
+**Pattern:**
+```typescript
+import { definePluginSettings } from "@api/Settings";
+import definePlugin, { OptionType } from "@utils/types";
+
+const settings = definePluginSettings({
+    settingName: {
+        type: OptionType.BOOLEAN,
+        description: "Clear description",
+        default: true,
+    },
+    numberSetting: {
+        type: OptionType.NUMBER,
+        description: "Number setting",
+        default: 100,
+        isValid: (v) => Number.isFinite(v) && v >= 0 && v <= 200,
+    }
+});
+
+export default definePlugin({
+    settings,
+});
+```
+
+**Best Practices:**
+- Use clear, descriptive setting names
+- Provide helpful descriptions
+- Set sensible defaults
+- Use `isValid` for number/string validation
+- Avoid unnecessary settings bloat
+
+---
+
+## Prohibited Practices
+
+### ❌ DOM Manipulation
+
+**NEVER use:**
+- `document.querySelector` / `querySelectorAll`
+- `document.getElementById`
+- `getElementByClassName`
+- Hardcoded class selectors from Discord markup
+- Manual DOM traversal for feature logic
+
+**Instead:**
+- Use patches to modify Discord's React components
+- Use component injection APIs (`@api/HeaderBar`, `@api/UserArea`, etc.)
+- Use stores and selectors to access data
+- Use React components for UI
+
+### ❌ Observers
+
+**NEVER use:**
+- `MutationObserver`
+- `ResizeObserver`
+- `IntersectionObserver`
+
+**Instead:**
+- Use fixed sizing rules similar to Discord's layout
+- Use `requestAnimationFrame` for DOM readiness checks
+- Use scroll event listeners (explicit) rather than `IntersectionObserver`
+- Use module/component patching
+- Use stores/selectors for state changes
+- Use `useEffect` with proper dependencies for React components
+
+### ❌ Inline Styles for Layout
+
+**NEVER use:**
+```typescript
+<div style={{ height: "100%", overflow: "auto", padding: "10px" }}>
+```
+
+**Instead:**
+```typescript
+// In component
+<div className="vc-plugin-scroll">
+
+// In style.css
+.vc-plugin-scroll {
+    height: 100%;
+    overflow: auto;
+    padding: 10px;
+    box-sizing: border-box;
+}
+```
+
+**Rules:**
+- No inline `style={{...}}` for layout/structure
+- Put styles in CSS and use `className`
+- Inline styles are acceptable for dynamic values (e.g., `style={{ color: dynamicColor }}`)
+
+### ❌ Optional Chaining on Expected Objects
+
+**Avoid:**
+```typescript
+if (channel?.guild_id && !PermissionStore.can(...)) {
+```
+
+**Prefer:**
+```typescript
+if (!channel) return false;
+if (channel.guild_id && !PermissionStore.can(...)) {
+```
+
+**Why:** If an object is expected to exist in normal runtime, handle absence once at initialization rather than using optional chaining everywhere.
+
+**Exception:** Optional chaining is acceptable for truly optional data (e.g., user profile data that may not be loaded).
+
+### ❌ Managed CSS Manual Control
+
+**NEVER manually enable/disable managed styles:**
+```typescript
+// ❌ WRONG
+import styles from "./style.css?managed";
+start() {
+    enableStyle(styles);
+},
+stop() {
+    disableStyle(styles);
+}
+```
+
+**Instead:**
+```typescript
+// ✅ CORRECT
+import "./style.css?managed";
+// No start/stop needed - managed CSS is automatically handled
+```
+
+---
+
+## Code Quality Patterns
+
+### Early Validation Pattern
+
+**Always validate inputs before accessing properties or calling methods:**
+```typescript
+// ✅ GOOD - Early validation
+function processChannel(channel: Channel | null | undefined): boolean {
+    if (!channel) return false; // Validate first
+    
+    // Now safe to access properties
+    if (channel.isDM()) return false;
+    if (!channel.guild_id) return false;
+    
+    return PermissionStore.can(PermissionsBits.VIEW_CHANNEL, channel);
+}
+```
+
+**Rules:**
+- Check for null/undefined at the start of functions
+- Validate array bounds before accessing elements
+- Check object existence before calling methods
+- Use early returns to avoid deep nesting
+
+### Consolidated Condition Checks
+
+**Combine related conditions into single if statements:**
+```typescript
+// ✅ GOOD - Consolidated check
+function canUse(channel: Channel | null | undefined): boolean {
+    if (!channel) return false; // Early return for validation
+    
+    // Combine related checks
+    if (!isSupportedChannel(channel) || (channel.guild_id && !PermissionStore.can(...)))
+        return false;
+    
+    return true;
+}
+```
+
+**Why:**
+- Better performance (single evaluation)
+- Cleaner code (less repetition)
+- Easier to understand (logical grouping)
+
+### Handler Extraction Pattern
+
+**Extract event handlers instead of using inline functions:**
+```typescript
+// ✅ GOOD - Extracted handler
+function Component() {
+    const handleClick = () => {
+        if (!channelId) return;
+        toggleGallery(channelId);
+    };
+    
+    return <Button onClick={handleClick} />;
+}
+```
+
+**Benefits:**
+- Easier debugging (can set breakpoints)
+- Better performance (function created once)
+- Removes redundant checks (disabled prop handles UI state)
+- Cleaner code organization
+
+### Array Access Safety
+
+**Always validate arrays and indices before access:**
+```typescript
+// ✅ GOOD - Safe array access
+function getItem(items: Item[], index: number): Item | null {
+    if (!items || items.length === 0 || index < 0 || index >= items.length)
+        return null;
+    
+    return items[index];
+}
+```
+
+### Missing Dependencies in useStateFromStores
+
+**NEVER omit the dependencies array when the mapper depends on reactive values:**
+```typescript
+// ❌ BAD - Missing dependency
+const channel = useStateFromStores(
+    [ChannelStore],
+    () => ChannelStore.getChannel(channelId) // channelId not in deps!
+);
+
+// ✅ GOOD - Include dependencies
+const channel = useStateFromStores(
+    [ChannelStore],
+    () => channelId ? ChannelStore.getChannel(channelId) : null,
+    [channelId] // Dependencies array
+);
+```
+
+---
+
+## TypeScript Guidelines
+
+### Type Safety
+
+**Rules:**
+- Avoid `as any` unless absolutely necessary
+- If typing is missing, fix typing or wrap the API boundary once
+- Use `import type { ... }` for type-only imports
+- Prefer explicit control flow over clever expressions
+
+### Enum/Type Branching
+
+**Use `switch` statements for enum-like branching:**
+```typescript
+// ✅ GOOD
+switch (type) {
+    case ChannelTypes.DM:
+        return false;
+    case ChannelTypes.GUILD_TEXT:
+    case ChannelTypes.PUBLIC_THREAD:
+    case ChannelTypes.PRIVATE_THREAD:
+        return true;
+    default:
+        return false;
+}
+```
+
+### Import Organization
+
+**Group imports in this order:**
+1. External libs
+2. `@webpack/common`
+3. `@api/*`
+4. `@utils/*`
+5. `@components/*`
+6. Relative imports
+
+---
+
+## Styling Guidelines
+
+### CSS File Structure
+
+**Pattern:**
+```css
+/* Plugin-specific prefix */
+.vc-plugin-name-container {
+    /* styles */
+}
+
+.vc-plugin-name-button {
+    color: var(--interactive-icon-default);
+    cursor: pointer;
+}
+
+.vc-plugin-name-button:hover {
+    color: var(--interactive-icon-hover);
+}
+```
+
+**Rules:**
+- Prefix all classes with `vc-` or `vc-plugin-name-`
+- Use Discord CSS variables for colors
+- Use `className` in components, not inline styles for layout
+- Import CSS with `import "./style.css"` or `import "./style.css?managed"`
+
+### Managed CSS
+
+**Use `?managed` suffix:**
+```typescript
+import "./style.css?managed";
+```
+
+**Rules:**
+- Managed CSS is automatically enabled/disabled with the plugin
+- Do not manually call `enableStyle`/`disableStyle` in `start`/`stop`
+- Use managed CSS for plugin-specific styles
+
+---
+
+## Error Handling
+
+### Error Boundaries
+
+**Always wrap injected components:**
+```typescript
+import ErrorBoundary from "@components/ErrorBoundary";
+
+export default definePlugin({
+    renderComponent(props) {
+        return (
+            <ErrorBoundary noop>
+                <YourComponent {...props} />
+            </ErrorBoundary>
+        );
+    }
+});
+```
+
+**Options:**
+- `noop: true` - Component can fail silently (for non-critical UI)
+- `fallback: () => <div>Error message</div>` - Custom error UI
+- Default - Shows error boundary UI
+
+### Try-Catch Blocks
+
+**Use for async operations:**
+```typescript
+async function fetchData() {
+    try {
+        const data = await RestAPI.get({ url: "/endpoint" });
+        return data;
+    } catch (e) {
+        console.error("Failed to fetch data:", e);
+        return null;
+    }
+}
+```
+
+---
+
+## Lifecycle Management
+
+### start() Method
+
+**Responsibilities:**
+- Subscribe to Flux events (if not using `flux` object)
+- Initialize caches
+- Set up timers/intervals
+- Open WebSocket connections
+- Load persisted data
+
+**Example:**
+```typescript
+start() {
+    // Load settings/data
+    const savedData = await DataStore.get(KEY) ?? [];
+    
+    // Subscribe to events
+    FluxDispatcher.subscribe("EVENT", handler);
+    
+    // Initialize state
+    cache = new Map();
+    
+    // Set up timers
+    intervalId = setInterval(updateFunction, 1000);
+}
+```
+
+### stop() Method
+
+**Responsibilities:**
+- Unsubscribe from all events
+- Clear all timers/intervals
+- Close WebSocket connections
+- Clear caches
+- Revert any injected state
+
+**Example:**
+```typescript
+stop() {
+    // Unsubscribe
+    FluxDispatcher.unsubscribe("EVENT", handler);
+    
+    // Clear timers
+    if (intervalId) {
+        clearInterval(intervalId);
+        intervalId = null;
+    }
+    
+    // Close connections
+    if (ws) {
+        ws.close();
+        ws = null;
+    }
+    
+    // Clear caches
+    cache.clear();
+}
+```
+
+**Critical:** `stop()` must fully revert all changes made in `start()`. The plugin should leave no trace when disabled.
+
+---
+
+## Pre-Push Requirements
+
+**CRITICAL**: Before pushing code, you **MUST** run all workflow checks locally to ensure everything passes.
+
+### Required Commands
+
+**Always run before pushing:**
+```bash
+# Run all tests (includes linting and compilation)
+pnpm test
+
+# Build web version to verify compilation
+pnpm buildWeb
+
+# Validate plugin structure
+pnpm generatePluginJson
+```
+
+### Workflow Checks
+
+The CI workflow (`.github/workflows/test.yml`) runs:
+1. `pnpm test` - Full test suite (linting + compilation)
+2. `pnpm buildWeb` - Web version compilation
+3. `pnpm generatePluginJson` - Plugin structure validation
+
+**If any of these fail locally, DO NOT push.** Fix the issues first.
+
+### Additional Useful Commands
+
+```bash
+pnpm lint        # Linting only
+pnpm lint:fix    # Auto-fix linting issues
+pnpm testTsc     # TypeScript check only
+pnpm lint-styles # CSS linting
+```
+
+---
+
+## Code Quality Checklist
+
+### Before Pushing
+
+- [ ] **Used existing APIs** - Checked `@api`, `@utils`, `@components`, `@webpack` rulesets
+- [ ] **No DOM access** - No `querySelector`, `getElementById`, etc.
+- [ ] **No observers** - No `MutationObserver`, `ResizeObserver`, `IntersectionObserver`
+- [ ] **No inline layout styles** - Used `className` + CSS
+- [ ] **Managed CSS** - Not manually enabled/disabled
+- [ ] **Patches consolidated** - Combined related patches when possible
+- [ ] **No redundant code** - No duplicate validations or checks
+- [ ] **Early validation** - Objects validated before property access
+- [ ] **Handlers extracted** - No inline arrow functions with complex logic
+- [ ] **Array bounds checked** - Arrays and indices validated before access
+- [ ] **Dependencies included** - `useStateFromStores` has proper dependency arrays
+- [ ] **Cleanup complete** - `stop()` fully reverts all `start()` changes
+- [ ] **All tests pass** - `pnpm test` succeeds
+- [ ] **Web builds** - `pnpm buildWeb` succeeds
+- [ ] **Plugin structure valid** - `pnpm generatePluginJson` succeeds
+
+### Code Review Readiness
+
+**Your code should be "review-proof":**
+- No "why did you do it this way?" changes
+- Follow existing Equicord patterns
+- Use established APIs and utilities from rulesets
+- Avoid fragile UI hooks
+- Document non-obvious decisions with comments
+
+---
+
+## Additional Resources
+
+### Reference Rulesets
+
+- **API Ruleset**: `.cursor/rules/api-ruleset.mdc` - All `@api` usage
+- **Utils Ruleset**: `.cursor/rules/ruleset.mdc` - All `@utils` usage
+- **Components Ruleset**: `.cursor/rules/components-ruleset.mdc` - All `@components` usage
+- **Webpack Ruleset**: `.cursor/rules/webpack-ruleset.mdc` - All `@webpack` usage
+
+### Quick Reference
+
+**Common APIs:**
+- Context Menus: `@api/ContextMenu`
+- Header Bar: `@api/HeaderBar`
+- User Area: `@api/UserArea`
+- Settings: `@api/Settings`
+- DataStore: `@api/DataStore`
+- Modal: `@utils/modal`
+- Toast: `@webpack/common` (`Toasts.show`)
+
+**Common Webpack Exports:**
+- Stores: `UserStore`, `ChannelStore`, `MessageStore`, etc. (from `@webpack/common`)
+- Actions: `MessageActions`, `VoiceActions`, etc.
+- Components: `Menu`, `Button`, `Tooltip`, etc.
+- Utilities: `FluxDispatcher`, `RestAPI`, `Constants`, etc.
+
+### Best Practices Summary
+
+1. **API-first:** Always check rulesets first - use `@api/@utils/@components/@webpack`
+2. **No observers:** Mutation/Resize/IntersectionObserver are forbidden
+3. **CSS:** `className` + CSS only; no inline layout styles
+4. **Patching:** Minimal patches; prefer predicate gating over fallbacks
+5. **Managed CSS:** No `enableStyle`/`disableStyle` in `start`/`stop`
+6. **Cleanup:** `stop()` must fully revert all `start()` changes
+7. **Testing:** Must pass all workflow checks before push
+
+---
+
+## Examples
+
+### Minimal Plugin
+
+```typescript
+import definePlugin from "@utils/types";
+import { EquicordDevs } from "@utils/constants";
+
+export default definePlugin({
+    name: "MinimalPlugin",
+    description: "A minimal plugin example",
+    authors: [EquicordDevs.YourName],
+});
+```
+
+### Plugin with Settings and Patches
+
+```typescript
+import { definePluginSettings } from "@api/Settings";
+import definePlugin, { OptionType } from "@utils/types";
+import { EquicordDevs } from "@utils/constants";
+
+const settings = definePluginSettings({
+    enabled: {
+        type: OptionType.BOOLEAN,
+        description: "Enable feature",
+        default: true,
+    }
+});
+
+export default definePlugin({
+    name: "ExamplePlugin",
+    description: "Example plugin with settings",
+    authors: [EquicordDevs.YourName],
+    settings,
+    patches: [
+        {
+            find: "unique string",
+            replacement: {
+                match: /pattern/,
+                replace: "replacement"
+            },
+            predicate: () => settings.store.enabled
+        }
+    ]
+});
+```
+
+**Remember:** When in doubt, look at existing plugins in `src/equicordplugins/` for reference. Follow established patterns and maintain consistency with the codebase.

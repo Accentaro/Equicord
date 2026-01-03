@@ -1,0 +1,1514 @@
+# Equicord Plugins Best Practices Reference
+
+**CRITICAL**: This document provides comprehensive best practices, patterns, and optimizations based on analysis of all plugins in `src/equicordplugins/`. Use this as a reference for efficient, maintainable, and performant plugin development.
+
+---
+
+## Table of Contents
+
+1. [Error Handling](#error-handling)
+2. [Memory Management & Cleanup](#memory-management--cleanup)
+3. [Performance Optimizations](#performance-optimizations)
+4. [UI Components & Patterns](#ui-components--patterns)
+5. [State Management](#state-management)
+6. [Settings Management](#settings-management)
+7. [Event Handling](#event-handling)
+8. [Data Storage](#data-storage)
+9. [Component Patterns](#component-patterns)
+10. [Icons & Assets](#icons--assets)
+11. [Modals & Dialogs](#modals--dialogs)
+12. [Virtualization & Large Lists](#virtualization--large-lists)
+
+---
+
+## Error Handling
+
+### Try-Catch Patterns
+
+**ALWAYS wrap async operations and risky code in try-catch:**
+
+```typescript
+// ✅ GOOD - Async operations
+async function executeCommand(entry: CommandEntry) {
+    try {
+        await entry.handler();
+        recordRecent(entry.id);
+    } catch (error) {
+        Toasts.show({
+            message: `Command failed: ${entry.label}`,
+            type: Toasts.Type.FAILURE,
+            id: Toasts.genId(),
+        });
+        console.error("CommandPalette", error);
+    }
+}
+
+// ✅ GOOD - Risky operations with fallback
+async function toggleEnabled(name: string) {
+    try {
+        const result = wasEnabled ? stopPlugin(plugin) : startPlugin(plugin);
+        if (!result) {
+            settings.enabled = false;
+            showErrorToast(`Error while ${wasEnabled ? "stopping" : "starting"} plugin ${name}`);
+            return false;
+        }
+    } catch (e) {
+        new Logger("EquicordHelper").error("Error while toggling:", e);
+        showToast(`Failed to ${label.toLowerCase()}`, Toasts.Type.FAILURE);
+        return false;
+    }
+}
+
+// ✅ GOOD - Optional chaining for safe access
+if (typeof window !== "undefined" && (window as any).Vencord?.Api?.Themes?.initQuickCssThemeStore) {
+    (window as any).Vencord.Api.Themes.initQuickCssThemeStore(m);
+}
+```
+
+### Error Boundaries
+
+**ALWAYS wrap user-facing components with ErrorBoundary:**
+
+```typescript
+import ErrorBoundary from "@components/ErrorBoundary";
+
+// ✅ GOOD - Wrap components
+export const PluginButtons = ErrorBoundary.wrap(function PluginCards({ message }: { message: Message; }) {
+    // Component code
+}, { noop: true }); // noop: true for non-critical components
+
+// ✅ GOOD - In modal rendering
+modalKey = openModal(
+    ErrorBoundary.wrap(modalProps => (
+        <GalleryModal {...modalProps} />
+    ), { noop: true }),
+    { onCloseCallback: () => { /* ... */ } }
+);
+```
+
+### Early Validation
+
+**Validate inputs and state early to prevent errors:**
+
+```typescript
+// ✅ GOOD - Early validation
+function canUseGallery(channel: Channel | null | undefined): boolean {
+    if (!channel) return false; // Validate first
+    if (!isSupportedChannel(channel)) return false;
+    if (channel.guild_id && !PermissionStore.can(PermissionsBits.VIEW_CHANNEL, channel)) return false;
+    return true;
+}
+
+// ✅ GOOD - Array bounds checking
+const lastMsg = msgs[msgs.length - 1];
+if (lastMsg && lastMsg.id) {
+    before = String(lastMsg.id);
+} else {
+    localHasMore = false;
+    break;
+}
+```
+
+---
+
+## Memory Management & Cleanup
+
+### stop() Method - Complete Cleanup
+
+**CRITICAL: stop() must fully revert all start() changes:**
+
+```typescript
+export default definePlugin({
+    start() {
+        // Initialize
+        cacheByChannel.clear();
+        FluxDispatcher.subscribe("EVENT", handler);
+        intervalId = setInterval(updateFunction, 1000);
+        modalKey = openModal(/* ... */);
+    },
+
+    stop() {
+        // ✅ GOOD - Complete cleanup
+        cacheByChannel.clear();
+        
+        if (modalKey) {
+            closeModal(modalKey);
+            modalKey = null;
+        }
+        
+        FluxDispatcher.unsubscribe("EVENT", handler);
+        
+        if (intervalId) {
+            clearInterval(intervalId);
+            intervalId = null;
+        }
+        
+        // Clear all state
+        setState({ mode: "closed", channelId: null, selectedStableId: null });
+        stateListeners.clear();
+        isOpeningFullscreen = false;
+        pendingFullscreen = null;
+        isProcessingCloseCallback = false;
+    }
+});
+```
+
+### useEffect Cleanup
+
+**ALWAYS return cleanup functions from useEffect:**
+
+```typescript
+// ✅ GOOD - Cleanup subscriptions
+useEffect(() => {
+    const listener = () => setLocalState({ ...globalState });
+    stateListeners.add(listener);
+    return () => { stateListeners.delete(listener); };
+}, []);
+
+// ✅ GOOD - Cleanup event listeners
+useEffect(() => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+
+    const handleScroll = () => { /* ... */ };
+    el.addEventListener("scroll", handleScroll, { passive: true });
+    
+    return () => {
+        el.removeEventListener("scroll", handleScroll);
+        if (rafIdRef.current !== null) {
+            cancelAnimationFrame(rafIdRef.current);
+            rafIdRef.current = null;
+        }
+        if (loadingTimeoutRef.current) {
+            clearTimeout(loadingTimeoutRef.current);
+            loadingTimeoutRef.current = null;
+        }
+    };
+}, [handleScroll]);
+
+// ✅ GOOD - Cleanup AbortController
+useEffect(() => {
+    return () => abortRef.current?.abort();
+}, []);
+```
+
+### Interval & Timeout Cleanup
+
+**ALWAYS store and clear intervals/timeouts:**
+
+```typescript
+// ✅ GOOD - Store references
+let checkInterval: ReturnType<typeof setInterval> | null = null;
+let cleanupTimeout: ReturnType<typeof setTimeout> | null = null;
+
+const cleanupInterval = () => {
+    if (checkInterval) {
+        clearInterval(checkInterval);
+        checkInterval = null;
+    }
+    if (cleanupTimeout) {
+        clearTimeout(cleanupTimeout);
+        cleanupTimeout = null;
+    }
+};
+
+// Use cleanup
+checkInterval = setInterval(() => { /* ... */ }, 100);
+cleanupTimeout = setTimeout(cleanupInterval, 60000);
+
+// Cleanup in close callback
+const closeCallback = () => {
+    cleanupInterval();
+    handleClose();
+};
+```
+
+### Cache Management
+
+**Clear caches and maps in stop():**
+
+```typescript
+// ✅ GOOD - Clear all caches
+stop() {
+    cacheByChannel.clear();
+    activeQuestIntervals.forEach((intervalData) => {
+        clearInterval(intervalData.progressTimeout);
+        clearTimeout(intervalData.rerenderTimeout);
+    });
+    activeQuestIntervals.clear();
+    contextProviders.clear();
+    categories.clear();
+    registry.clear();
+}
+```
+
+---
+
+## Performance Optimizations
+
+### React.memo for Components
+
+**Use React.memo to prevent unnecessary re-renders:**
+
+```typescript
+// ✅ GOOD - Memoized component with custom comparison
+function ThumbnailItemComponent({ item, thumbSize, showCaptions, failedVideos, onSelect, onMarkFailed, setFailedVideos }: Props) {
+    // Component implementation
+}
+
+// Memoize if available, fallback if not
+const ThumbnailItem = React.memo ? React.memo(ThumbnailItemComponent, (prev, next) => {
+    // Custom comparison to prevent re-renders when props haven't changed
+    return (
+        prev.item.stableId === next.item.stableId &&
+        prev.thumbSize === next.thumbSize &&
+        prev.showCaptions === next.showCaptions &&
+        prev.failedVideos.has(prev.item.stableId) === next.failedVideos.has(next.item.stableId)
+    );
+}) : ThumbnailItemComponent;
+```
+
+### useMemo for Expensive Calculations
+
+**Memoize expensive computations:**
+
+```typescript
+// ✅ GOOD - Memoize filtered/transformed data
+const filteredItems = useMemo(() => {
+    return filterItems(items, filter);
+}, [items, filter]);
+
+// ✅ GOOD - Memoize layout calculations
+const gridLayout = useMemo(() => {
+    const usableWidth = Math.max(1, viewport.width - PADDING * 2);
+    const columns = Math.max(1, Math.floor((usableWidth + GAP) / (MIN_THUMB + GAP)));
+    const cell = Math.max(MIN_THUMB, Math.min(MAX_THUMB, Math.floor((usableWidth - (columns - 1) * GAP) / columns)));
+    return { columns, cell, thumbSize: Math.max(128, Math.min(512, cell * 2)) };
+}, [viewport.width]);
+
+// ✅ GOOD - Memoize cache creation
+const cache = React.useMemo(() => getOrCreateCache(channelId), [channelId]);
+```
+
+### useCallback for Event Handlers
+
+**Memoize callbacks to prevent child re-renders:**
+
+```typescript
+// ✅ GOOD - Memoized callbacks
+const handleSelect = useCallback((stableId: string) => {
+    setState({ mode: "single", channelId, selectedStableId: stableId });
+}, [channelId]);
+
+const handleThumbClick = useCallback((e: React.MouseEvent, stableId: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    isSelectingRef.current = true;
+    onSelect(stableId);
+    setTimeout(() => { isSelectingRef.current = false; }, 100);
+}, [onSelect]);
+
+// ✅ GOOD - Memoized with dependencies
+const loadNextChunks = useCallback(async (chunks: number) => {
+    // Implementation
+}, [channelId, hasMore, pluginSettings.chunkSize, pluginSettings.includeEmbeds, pluginSettings.includeGifs, cache]);
+```
+
+### Virtualization for Large Lists
+
+**CRITICAL: Virtualize large lists to prevent performance issues:**
+
+```typescript
+// ✅ GOOD - Windowed rendering (only render visible items)
+const [visibleRange, setVisibleRange] = useState({ start: 0, end: 50 });
+const BUFFER_ROWS = 2; // Render 2 rows outside viewport
+
+const calculateVisibleRange = useCallback(() => {
+    const scrollEl = scrollContainerRef.current;
+    if (!scrollEl || filteredItems.length === 0) return;
+
+    const { scrollTop, clientHeight } = scrollEl;
+    const { columns, cell } = gridLayout;
+    const rowHeight = cell + GAP;
+    
+    const startRow = Math.max(0, Math.floor(scrollTop / rowHeight) - BUFFER_ROWS);
+    const visibleRows = Math.ceil(clientHeight / rowHeight);
+    const endRow = Math.min(
+        startRow + visibleRows + BUFFER_ROWS * 2,
+        Math.ceil(filteredItems.length / columns)
+    );
+    
+    const start = Math.max(0, startRow * columns);
+    const end = Math.min(filteredItems.length, endRow * columns);
+    
+    setVisibleRange(prev => {
+        // Only update if range changed significantly
+        if (Math.abs(prev.start - start) > columns || Math.abs(prev.end - end) > columns) {
+            return { start, end };
+        }
+        return prev;
+    });
+}, [filteredItems.length, gridLayout]);
+
+// Render only visible items
+const itemsToShow = useMemo(() => {
+    return filteredItems.slice(visibleRange.start, visibleRange.end);
+}, [filteredItems, visibleRange]);
+
+// Use spacers to maintain scroll height
+const totalRows = Math.ceil(filteredItems.length / columns);
+const totalHeight = totalRows * (cell + GAP) - GAP + PADDING * 2;
+const topSpacerHeight = Math.max(0, (Math.floor(visibleRange.start / columns)) * (cell + GAP));
+const bottomSpacerHeight = Math.max(0, totalHeight - topSpacerHeight - (Math.ceil((visibleRange.end - visibleRange.start) / columns) * (cell + GAP)));
+
+return (
+    <div className="vc-gallery-grid">
+        {topSpacerHeight > 0 && (
+            <div style={{ height: topSpacerHeight, gridColumn: `1 / -1` }} />
+        )}
+        {itemsToShow.map(item => <ThumbnailItem key={item.stableId} {...props} />)}
+        {bottomSpacerHeight > 0 && (
+            <div style={{ height: bottomSpacerHeight, gridColumn: `1 / -1` }} />
+        )}
+    </div>
+);
+```
+
+### RequestAnimationFrame for Smooth Updates
+
+**Use requestAnimationFrame for scroll/visual updates:**
+
+```typescript
+// ✅ GOOD - RAF for scroll handling
+const handleScroll = useCallback(() => {
+    if (rafIdRef.current !== null) return;
+
+    rafIdRef.current = requestAnimationFrame(() => {
+        rafIdRef.current = null;
+        const el = scrollContainerRef.current;
+        if (!el) return;
+        
+        // Update visible range
+        calculateVisibleRange();
+        
+        // Load more when near bottom
+        const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+        if (distanceFromBottom < LOAD_MORE_THRESHOLD && !isLoading && hasMore) {
+            onLoadMore();
+        }
+    });
+}, [hasMore, isLoading, onLoadMore, calculateVisibleRange]);
+```
+
+### Debouncing & Throttling
+
+**Debounce/throttle expensive operations:**
+
+```typescript
+import { debounce } from "@utils";
+
+// ✅ GOOD - Debounced updates
+const debouncedUpdate = debounce(() => {
+    updateFunction();
+}, 300);
+
+// ✅ GOOD - Throttled scroll updates
+const handleScroll = useCallback(() => {
+    if (rafIdRef.current !== null) return; // Throttle via RAF
+    rafIdRef.current = requestAnimationFrame(() => {
+        rafIdRef.current = null;
+        // Update logic
+    });
+}, []);
+```
+
+---
+
+## UI Components & Patterns
+
+### Buttons
+
+**USE Button component from @webpack/common:**
+
+```typescript
+import { Button } from "@webpack/common";
+
+// ✅ GOOD - Standard button
+<Button
+    onClick={handleClick}
+    size={Button.Sizes.SMALL}
+    color={Button.Colors.PRIMARY}
+    look={Button.Looks.FILLED}
+    disabled={!supported}
+>
+    Click Me
+</Button>
+
+// ✅ GOOD - Button with async handler
+<Button
+    onClick={async () => {
+        try {
+            const success = await toggleEnabled(pluginName);
+            if (success) showToast("Success", Toasts.Type.SUCCESS);
+        } catch (e) {
+            showToast("Failed", Toasts.Type.FAILURE);
+        }
+    }}
+    color={isEnabled ? Button.Colors.RED : Button.Colors.GREEN}
+>
+    {isEnabled ? "Disable" : "Enable"}
+</Button>
+
+// ✅ GOOD - Button variants
+<Button color={Button.Colors.BRAND} look={Button.Looks.FILLED}>Brand</Button>
+<Button color={Button.Colors.LINK} look={Button.Looks.LINK}>Link</Button>
+<Button color={Button.Colors.RED} look={Button.Looks.OUTLINED}>Danger</Button>
+```
+
+### Icons
+
+**Patterns for icons:**
+
+```typescript
+// ✅ GOOD - Find Discord's native icon with fallback
+function findGalleryIcon(): React.ComponentType<any> | null {
+    try {
+        const byCode = findComponentByCodeLazy("M4 8v7.5a.5.5 0 0 1-.5.5H3a1 1 0 0 1-1-1V8a6 6 0 0 1 6-6h7a1 1 0 0 1 1 1v.5a.5.5 0 0 1-.5.5H8a4 4 0 0 0-4 4Z");
+        if (byCode) return byCode;
+    } catch {
+        // Fall through to fallback
+    }
+    return null;
+}
+
+// ✅ GOOD - Fallback SVG icon
+function FallbackGalleryIcon(props: React.SVGProps<SVGSVGElement>) {
+    const { width = 20, height = 20, ...restProps } = props;
+    return (
+        <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width={width}
+            height={height}
+            fill="none"
+            viewBox="0 0 24 24"
+            aria-hidden="true"
+            {...restProps}
+        >
+            <path fill="currentColor" d="..." />
+        </svg>
+    );
+}
+
+// Export with fallback
+const NativeIcon = findGalleryIcon();
+export const GalleryIcon = NativeIcon || FallbackGalleryIcon;
+
+// ✅ GOOD - Use icon in button
+<ChannelToolbarButton
+    icon={GalleryIcon}
+    tooltip="Gallery"
+    disabled={!supported}
+    selected={selected}
+    onClick={handleClick}
+/>
+```
+
+### Tooltips
+
+**USE Tooltip component:**
+
+```typescript
+import { Tooltip } from "@webpack/common";
+
+// ✅ GOOD - Tooltip wrapper
+<Tooltip text="Tooltip text">
+    {tooltipProps => (
+        <div {...tooltipProps}>
+            {/* Your content */}
+        </div>
+    )}
+</Tooltip>
+
+// ✅ GOOD - Tooltip on button (built-in)
+<Button tooltip="Button tooltip" onClick={handleClick}>
+    Click Me
+</Button>
+```
+
+### Cards
+
+**USE Card component:**
+
+```typescript
+import { Card } from "@components";
+
+// ✅ GOOD - Card with styling
+<Card style={{ padding: ".5rem", marginBottom: ".5em" }}>
+    <HeadingPrimary>{title}</HeadingPrimary>
+    <Paragraph>{description}</Paragraph>
+</Card>
+```
+
+---
+
+## State Management
+
+### useState Patterns
+
+**Initialize state from cache/defaults:**
+
+```typescript
+// ✅ GOOD - Initialize from cache
+const cache = React.useMemo(() => getOrCreateCache(channelId), [channelId]);
+const [items, setItems] = React.useState<GalleryItem[]>(() => cache.items);
+const [hasMore, setHasMore] = React.useState<boolean>(() => cache.hasMore);
+
+// ✅ GOOD - Lazy initial state
+const [visibleRange, setVisibleRange] = useState(() => ({ start: 0, end: 50 }));
+
+// ✅ GOOD - Update initial state when dependencies change
+useEffect(() => {
+    if (visibleRange.end === 50 && filteredItems.length > 0) {
+        setVisibleRange({ start: 0, end: Math.min(initialEnd, filteredItems.length) });
+    }
+}, [filteredItems.length, initialEnd]);
+```
+
+### useStateFromStores
+
+**ALWAYS include dependency array when mapper depends on reactive values:**
+
+```typescript
+import { useStateFromStores } from "@webpack/common";
+
+// ✅ GOOD - With dependencies
+const channelId = useStateFromStores([SelectedChannelStore], () => SelectedChannelStore.getChannelId());
+const channel = useStateFromStores(
+    [ChannelStore, SelectedChannelStore],
+    () => channelId ? ChannelStore.getChannel(channelId) : null,
+    [channelId] // ✅ Dependencies array required!
+);
+
+// ✅ GOOD - Settings hook
+const { questButtonDisplay, unclaimedUnignoredQuests } = settings.use([
+    "questButtonDisplay",
+    "unclaimedUnignoredQuests"
+]);
+```
+
+### Global State Management
+
+**Pattern for shared state across components:**
+
+```typescript
+// ✅ GOOD - Global state with listeners
+let globalState: GalleryState = { mode: "closed", channelId: null, selectedStableId: null };
+const stateListeners = new Set<() => void>();
+
+function setState(updates: Partial<GalleryState>): void {
+    globalState = { ...globalState, ...updates };
+    stateListeners.forEach(listener => listener());
+}
+
+// In component
+const [localState, setLocalState] = React.useState<GalleryState>(() => globalState);
+
+React.useEffect(() => {
+    const listener = () => setLocalState({ ...globalState });
+    stateListeners.add(listener);
+    return () => { stateListeners.delete(listener); };
+}, []);
+```
+
+---
+
+## Settings Management
+
+### definePluginSettings
+
+**Pattern for plugin settings:**
+
+```typescript
+import { definePluginSettings } from "@api/Settings";
+import definePlugin, { OptionType } from "@utils/types";
+
+const settings = definePluginSettings({
+    enabled: {
+        type: OptionType.BOOLEAN,
+        description: "Enable feature",
+        default: true,
+    },
+    chunkSize: {
+        type: OptionType.NUMBER,
+        default: 100,
+        description: "Messages per chunk (25–100)",
+        isValid: v => {
+            const num = typeof v === "string" ? Number(v) : v;
+            return Number.isFinite(num) && num >= 25 && num <= 100;
+        },
+    },
+    buddy: {
+        type: OptionType.SELECT,
+        description: "Pick a cursor buddy",
+        options: [
+            { label: "Oneko", value: "oneko", default: true },
+            { label: "Fatass Horse", value: "fathorse" }
+        ],
+        onChange: load, // Callback when setting changes
+    },
+}, {
+    // Setting checks (conditional disabling)
+    fps: {
+        disabled() { return this.store.buddy !== "fathorse"; }
+    }
+});
+
+export default definePlugin({
+    settings,
+    start() {
+        // Access settings
+        const value = settings.store.enabled;
+        
+        // Update settings (auto-saves)
+        settings.store.enabled = false;
+    }
+});
+
+// In React component
+function MyComponent() {
+    const { enabled, chunkSize } = settings.use(["enabled", "chunkSize"]);
+    // Or use all
+    const allSettings = settings.use();
+}
+```
+
+### Settings Migration
+
+**Migrate settings when needed:**
+
+```typescript
+import { migratePluginToSettings } from "@api/Settings";
+
+// ✅ GOOD - Migrate old plugin settings
+migratePluginToSettings("QuestCompleter", "Questify");
+```
+
+---
+
+## Event Handling
+
+### FluxDispatcher Subscriptions
+
+**Pattern for Flux events:**
+
+```typescript
+import { FluxDispatcher } from "@webpack/common";
+
+// ✅ GOOD - Subscribe in start(), unsubscribe in stop()
+export default definePlugin({
+    flux: {
+        CHANNEL_SELECT(data) {
+            // Handle event
+        },
+        MESSAGE_CREATE(data) {
+            // Handle event
+        }
+    },
+
+    // OR manual subscription
+    start() {
+        const handler = (event: any) => {
+            // Handle event
+        };
+        FluxDispatcher.subscribe("EVENT_NAME", handler);
+        
+        // Store handler for cleanup
+        this.handler = handler;
+    },
+    
+    stop() {
+        if (this.handler) {
+            FluxDispatcher.unsubscribe("EVENT_NAME", this.handler);
+        }
+    }
+});
+
+// ✅ GOOD - Safe subscription with optional chaining
+FluxDispatcher.subscribe?.("CHANNEL_CLOSE", handleChannelClose);
+
+// Cleanup
+sessionCleanupCallbacks.push(() => {
+    FluxDispatcher.unsubscribe?.("CHANNEL_CLOSE", handleChannelClose);
+});
+```
+
+### Keyboard Events
+
+**Pattern for keyboard handling:**
+
+```typescript
+// ✅ GOOD - Keyboard navigation with cleanup
+useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+        if (e.key === "Escape") {
+            e.preventDefault();
+            onClose();
+        } else if (e.key === "ArrowLeft" && hasPrev && prevStableId) {
+            e.preventDefault();
+            onChange(prevStableId);
+        } else if (e.key === "ArrowRight" && hasNext && nextStableId) {
+            e.preventDefault();
+            onChange(nextStableId);
+        }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+}, [hasPrev, hasNext, prevStableId, nextStableId, onClose, onChange]);
+```
+
+### Mouse Events
+
+**Pattern for mouse handling:**
+
+```typescript
+// ✅ GOOD - Mouse event handling
+function handleClick(event: React.MouseEvent<Element>) {
+    // ListItem does not support onAuxClick, so we listen for mousedown
+    if (event.type === "mousedown" && event.button !== middleClick) {
+        return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    let action: string | null = null;
+    if (event.button === middleClick) {
+        action = settings.store.middleClickAction;
+    } else if (event.button === rightClick) {
+        action = settings.store.rightClickAction;
+    } else if (event.button === leftClick) {
+        action = settings.store.leftClickAction;
+    }
+
+    if (action === "open") {
+        NavigationRouter.transitionTo(path);
+    }
+}
+```
+
+---
+
+## Data Storage
+
+### DataStore Usage
+
+**USE DataStore for persistent data:**
+
+```typescript
+import { DataStore } from "@api/DataStore";
+
+// ✅ GOOD - Store data
+const DATA_COLLECTION_NAME = "MyPlugin:data";
+
+async function saveData(data: MyData[]) {
+    await DataStore.set(DATA_COLLECTION_NAME, data);
+}
+
+async function loadData(): Promise<MyData[]> {
+    return (await DataStore.get<MyData[]>(DATA_COLLECTION_NAME)) ?? [];
+}
+
+// ✅ GOOD - Create custom store
+start() {
+    DataStore.createStore("MyPlugin", "data");
+}
+
+// ✅ GOOD - Batch operations
+await DataStore.setMany([
+    ["key1", value1],
+    ["key2", value2]
+]);
+
+const values = await DataStore.getMany(["key1", "key2"]);
+```
+
+### Cache Management
+
+**Pattern for in-memory caches:**
+
+```typescript
+// ✅ GOOD - Channel-based cache
+const cacheByChannel = new Map<string, GalleryCache>();
+
+function getOrCreateCache(channelId: string): GalleryCache {
+    if (!channelId) {
+        return { items: [], stableIds: new Set(), failedIds: new Set(), oldestMessageId: null, hasMore: true };
+    }
+    const existing = cacheByChannel.get(channelId);
+    if (existing) return existing;
+    
+    const created: GalleryCache = {
+        items: [],
+        stableIds: new Set(),
+        failedIds: new Set(),
+        oldestMessageId: null,
+        hasMore: true
+    };
+    cacheByChannel.set(channelId, created);
+    return created;
+}
+
+// Clear in stop()
+stop() {
+    cacheByChannel.clear();
+}
+```
+
+---
+
+## Component Patterns
+
+### Conditional Rendering
+
+**Early returns for invalid states:**
+
+```typescript
+// ✅ GOOD - Early validation and return
+export function SingleView(props: Props) {
+    const selectedIndex = useMemo(() => {
+        if (!items || items.length === 0 || !selectedStableId) return -1;
+        return items.findIndex(item => item && item.stableId === selectedStableId);
+    }, [items, selectedStableId]);
+
+    // Auto-advance to next valid if current is invalid
+    useEffect(() => {
+        if (selectedIndex < 0 || selectedIndex >= items.length) {
+            const nextValid = items.find(item => item && item.stableId && !cache.failedIds.has(item.stableId));
+            if (nextValid) {
+                onChange(nextValid.stableId);
+            } else {
+                onClose();
+            }
+            return;
+        }
+    }, [selectedIndex, items, cache.failedIds, onChange, onClose]);
+
+    if (selectedIndex < 0 || selectedIndex >= items.length) return null;
+    const item = items[selectedIndex];
+    if (!item || !item.url || cache.failedIds.has(item.stableId)) return null;
+
+    // Render component
+}
+```
+
+### Loading States
+
+**Pattern for loading/error states:**
+
+```typescript
+// ✅ GOOD - Loading and error handling
+const [loading, setLoading] = useState<boolean>(false);
+const [error, setError] = useState<string | null>(null);
+
+const loadData = useCallback(async () => {
+    if (loadingRef.current) return;
+    loadingRef.current = true;
+    setLoading(true);
+    setError(null);
+
+    const controller = new AbortController();
+    abortRef.current?.abort();
+    abortRef.current = controller;
+
+    try {
+        const data = await fetchData({ signal: controller.signal });
+        setItems(data);
+    } catch (e: unknown) {
+        if (e instanceof Error && (e.name === "AbortError" || e.message === "AbortError")) {
+            return; // Aborted, don't show error
+        }
+        setError("Unable to load data");
+    } finally {
+        loadingRef.current = false;
+        setLoading(false);
+    }
+}, []);
+```
+
+### AbortController for Cancellation
+
+**Use AbortController for async operations:**
+
+```typescript
+// ✅ GOOD - AbortController pattern
+const abortRef = useRef<AbortController | null>(null);
+
+const loadData = async () => {
+    const controller = new AbortController();
+    abortRef.current?.abort(); // Cancel previous
+    abortRef.current = controller;
+
+    try {
+        const data = await fetchData({ signal: controller.signal });
+        // Check if aborted
+        if (controller.signal.aborted) {
+            const err = new Error("AbortError");
+            err.name = "AbortError";
+            throw err;
+        }
+        setItems(data);
+    } catch (e) {
+        if (e instanceof Error && e.name === "AbortError") {
+            return; // Aborted, ignore
+        }
+        setError("Failed to load");
+    }
+};
+
+// Cleanup
+useEffect(() => {
+    return () => abortRef.current?.abort();
+}, []);
+```
+
+---
+
+## Modals & Dialogs
+
+### Modal Patterns
+
+**USE modal utilities from @utils/modal:**
+
+```typescript
+import { openModal, closeModal, ModalRoot, ModalHeader, ModalContent, ModalFooter, ModalCloseButton, ModalSize } from "@utils/modal";
+
+// ✅ GOOD - Open modal
+let modalKey: string | null = null;
+
+function openMyModal() {
+    modalKey = openModal(
+        ErrorBoundary.wrap(modalProps => (
+            <ModalRoot {...modalProps} size={ModalSize.MEDIUM}>
+                <ModalHeader>
+                    <Heading tag="h3">Modal Title</Heading>
+                    <ModalCloseButton onClick={modalProps.onClose} />
+                </ModalHeader>
+                <ModalContent>
+                    {/* Content */}
+                </ModalContent>
+                <ModalFooter>
+                    <Button onClick={modalProps.onClose}>Close</Button>
+                </ModalFooter>
+            </ModalRoot>
+        ), { noop: true }),
+        {
+            onCloseCallback: () => {
+                modalKey = null;
+                // Cleanup
+            }
+        }
+    );
+}
+
+// ✅ GOOD - Close modal
+function closeMyModal() {
+    if (modalKey) {
+        closeModal(modalKey);
+        modalKey = null;
+    }
+}
+
+// ✅ GOOD - Toggle modal
+function toggleModal() {
+    if (modalKey) {
+        closeModal(modalKey);
+        modalKey = null;
+    } else {
+        openMyModal();
+    }
+}
+```
+
+### Media Modal
+
+**USE openMediaModal for image/video viewers:**
+
+```typescript
+import { openMediaModal, MediaModalItem } from "@utils/modal";
+
+function openFullscreenView(items: GalleryItem[], selectedStableId: string, onClose: () => void) {
+    const mediaItems: MediaModalItem[] = items
+        .filter((item): item is GalleryItem => Boolean(item))
+        .map(item => ({
+            type: "IMAGE" as const,
+            url: item.url,
+            original: item.url,
+            alt: item.filename || "Image",
+            width: item.width,
+            height: item.height,
+            animated: item.isAnimated
+        }));
+
+    const selectedIndex = items.findIndex(item => item.stableId === selectedStableId);
+    
+    openMediaModal({
+        items: mediaItems,
+        startingIndex: selectedIndex >= 0 ? selectedIndex : 0,
+        location: "Channel Gallery",
+        onCloseCallback: onClose
+    });
+}
+```
+
+---
+
+## Virtualization & Large Lists
+
+### Windowed Rendering
+
+**CRITICAL: Virtualize lists with 1000+ items:**
+
+```typescript
+// ✅ GOOD - Virtualized grid
+const BUFFER_ROWS = 2; // Render 2 rows outside viewport
+const [visibleRange, setVisibleRange] = useState({ start: 0, end: 50 });
+
+// Calculate visible range based on scroll
+const calculateVisibleRange = useCallback(() => {
+    const scrollEl = scrollContainerRef.current;
+    if (!scrollEl || filteredItems.length === 0) return;
+
+    const { scrollTop, clientHeight } = scrollEl;
+    const { columns, cell } = gridLayout;
+    const rowHeight = cell + GAP;
+    
+    const startRow = Math.max(0, Math.floor(scrollTop / rowHeight) - BUFFER_ROWS);
+    const visibleRows = Math.ceil(clientHeight / rowHeight);
+    const endRow = Math.min(
+        startRow + visibleRows + BUFFER_ROWS * 2,
+        Math.ceil(filteredItems.length / columns)
+    );
+    
+    const start = Math.max(0, startRow * columns);
+    const end = Math.min(filteredItems.length, endRow * columns);
+    
+    setVisibleRange(prev => {
+        // Only update if changed significantly
+        if (Math.abs(prev.start - start) > columns || Math.abs(prev.end - end) > columns) {
+            return { start, end };
+        }
+        return prev;
+    });
+}, [filteredItems.length, gridLayout]);
+
+// Render only visible items
+const itemsToShow = useMemo(() => {
+    return filteredItems.slice(visibleRange.start, visibleRange.end);
+}, [filteredItems, visibleRange]);
+
+// Spacers to maintain scroll height
+const totalRows = Math.ceil(filteredItems.length / columns);
+const totalHeight = totalRows * (cell + GAP) - GAP + PADDING * 2;
+const topSpacerHeight = Math.max(0, (Math.floor(visibleRange.start / columns)) * (cell + GAP));
+const bottomSpacerHeight = Math.max(0, totalHeight - topSpacerHeight - (Math.ceil((visibleRange.end - visibleRange.start) / columns) * (cell + GAP)));
+
+return (
+    <div className="grid">
+        {topSpacerHeight > 0 && <div style={{ height: topSpacerHeight, gridColumn: `1 / -1` }} />}
+        {itemsToShow.map(item => <Item key={item.id} {...item} />)}
+        {bottomSpacerHeight > 0 && <div style={{ height: bottomSpacerHeight, gridColumn: `1 / -1` }} />}
+    </div>
+);
+```
+
+### Preloading Strategy
+
+**Preload adjacent items for smooth navigation:**
+
+```typescript
+// ✅ GOOD - Preload adjacent items
+function preloadAdjacentImages(items: GalleryItem[], index: number, windowSize: number = 3): void {
+    const start = Math.max(0, index - windowSize);
+    const end = Math.min(items.length, index + windowSize + 1);
+
+    for (let i = start; i < end; i++) {
+        const item = items[i];
+        if (!item) continue;
+        const img = new Image();
+        img.src = item.url;
+    }
+}
+
+// Use in component
+useEffect(() => {
+    if (hasPrev) {
+        for (let i = selectedIndex - 1; i >= 0; i--) {
+            const prevItem = items[i];
+            if (prevItem && prevItem.url && !cache.failedIds.has(prevItem.stableId)) {
+                preload(prevItem.url);
+                break;
+            }
+        }
+    }
+}, [selectedIndex, items, hasPrev, cache.failedIds]);
+```
+
+---
+
+## Context Menus
+
+### Context Menu Patterns
+
+**USE ContextMenu API:**
+
+```typescript
+import { ContextMenu } from "@api/ContextMenu";
+import { Menu } from "@webpack/common";
+
+// ✅ GOOD - Context menu patch
+const messageContextMenuPatch: NavContextMenuPatchCallback = (children, props) => {
+    const { favoriteableId, favoriteableType } = props ?? {};
+    if (!favoriteableId) return;
+
+    const menuItem = (() => {
+        switch (favoriteableType) {
+            case "sticker":
+                const sticker = props.message.stickerItems.find(s => s.id === favoriteableId);
+                if (sticker?.format_type === 3) return; // Skip LOTTIE
+                return buildMenuItem(favoriteableId);
+        }
+    })();
+
+    if (menuItem) {
+        const group = ContextMenu.findGroupChildrenByChildId("copy-link", children);
+        if (group) {
+            group.push(menuItem);
+        }
+    }
+};
+
+export default definePlugin({
+    contextMenus: {
+        "user-context": UserContextPatch,
+        "channel-context": ChannelContextPatch,
+        "message": messageContextMenuPatch,
+    }
+});
+
+// ✅ GOOD - Build menu item
+function buildMenuItem(id: string) {
+    return (
+        <Menu.MenuItem
+            id="my-action"
+            label="My Action"
+            action={() => {
+                // Action
+            }}
+            icon={SomeIcon}
+        />
+    );
+}
+```
+
+---
+
+## Header Bar & Toolbar Buttons
+
+### Header Bar Buttons
+
+**USE HeaderBar API:**
+
+```typescript
+import { HeaderBar } from "@api/HeaderBar";
+import { HeaderBarButton } from "@api/HeaderBar";
+
+// ✅ GOOD - Header bar button
+<HeaderBar
+    toolbar={
+        <>
+            <HeaderBarButton icon={ArrowsLeftRightIcon} tooltip="Switch" onClick={switchChannels} />
+            <HeaderBarButton icon={WindowLaunchIcon} tooltip="Popout" onClick={openPopout} />
+            <HeaderBarButton icon={XSmallIcon} tooltip="Close" onClick={closeSidebar} />
+        </>
+    }
+>
+    {/* Content */}
+</HeaderBar>
+```
+
+### Channel Toolbar Buttons
+
+**USE ChannelToolbarButton:**
+
+```typescript
+import { ChannelToolbarButton } from "@api/HeaderBar";
+
+function GalleryToolbarButton() {
+    const channelId = useStateFromStores([SelectedChannelStore], () => SelectedChannelStore.getChannelId());
+    const channel = useStateFromStores(
+        [ChannelStore, SelectedChannelStore],
+        () => channelId ? ChannelStore.getChannel(channelId) : null,
+        [channelId]
+    );
+
+    const supported = canUseGallery(channel);
+    const selected = Boolean(modalKey && globalState.channelId === channelId);
+
+    return (
+        <ChannelToolbarButton
+            icon={GalleryIcon}
+            tooltip="Gallery"
+            disabled={!supported}
+            selected={selected}
+            onClick={handleClick}
+        />
+    );
+}
+
+export default definePlugin({
+    headerBarButton: {
+        location: "channeltoolbar",
+        icon: GalleryIcon,
+        render: GalleryToolbarButton,
+        priority: 250
+    }
+});
+```
+
+---
+
+## Toast Notifications
+
+### Toast Patterns
+
+**USE Toasts API:**
+
+```typescript
+import { Toasts, showToast } from "@webpack/common";
+
+// ✅ GOOD - Success toast
+Toasts.show({
+    message: "Operation successful!",
+    type: Toasts.Type.SUCCESS,
+    id: Toasts.genId(),
+});
+
+// ✅ GOOD - Error toast
+Toasts.show({
+    message: "Operation failed",
+    type: Toasts.Type.FAILURE,
+    id: Toasts.genId(),
+});
+
+// ✅ GOOD - Using showToast helper
+showToast("Timezones refreshed successfully!", Toasts.Type.SUCCESS);
+showToast("Failed to refresh timezones.", Toasts.Type.FAILURE);
+
+// ✅ GOOD - Toast with options
+Toasts.show({
+    message: "Update available!",
+    type: Toasts.Type.SUCCESS,
+    id: Toasts.genId(),
+    options: {
+        position: Toasts.Position.BOTTOM
+    }
+});
+```
+
+---
+
+## API Calls & Fetching
+
+### RestAPI Patterns
+
+**USE RestAPI from @webpack/common:**
+
+```typescript
+import { RestAPI, Constants } from "@webpack/common";
+
+// ✅ GOOD - API call with error handling
+async function fetchMessagesChunk(args: {
+    channelId: string;
+    before: string | null;
+    limit: number;
+    signal?: AbortSignal;
+}): Promise<any[]> {
+    if (!args.channelId) return [];
+    if (args.signal && args.signal.aborted) {
+        throw new Error("AbortError");
+    }
+
+    try {
+        const res = await RestAPI.get({
+            url: Constants.Endpoints.MESSAGES(args.channelId),
+            query: {
+                limit: args.limit,
+                ...(args.before ? { before: args.before } : {})
+            },
+            retries: 1
+        });
+
+        if (args.signal && args.signal.aborted) {
+            throw new Error("AbortError");
+        }
+
+        if (!res) return [];
+        const body = res.body ?? res;
+        if (!Array.isArray(body)) return [];
+        return body;
+    } catch (e: unknown) {
+        if (args.signal && args.signal.aborted) {
+            throw new Error("AbortError");
+        }
+        if (e instanceof Error && (e.name === "AbortError" || e.message === "AbortError")) {
+            throw new Error("AbortError");
+        }
+        throw new Error("fetch_failed");
+    }
+}
+```
+
+---
+
+## Component Reusability
+
+### Extract Reusable Components
+
+**Create reusable components for repeated patterns:**
+
+```typescript
+// ✅ GOOD - Reusable component
+function ThumbnailItem({ item, onSelect, onMarkFailed }: Props) {
+    const handleClick = useCallback((e: React.MouseEvent) => {
+        onSelect(e, item.stableId);
+    }, [item.stableId, onSelect]);
+
+    return (
+        <div onClick={handleClick} className="thumbnail-button" role="button" tabIndex={0}>
+            {/* Content */}
+        </div>
+    );
+}
+
+// Memoize for performance
+const MemoizedThumbnailItem = React.memo ? React.memo(ThumbnailItem, customCompare) : ThumbnailItem;
+```
+
+---
+
+## Common Patterns Summary
+
+### Plugin Structure Template
+
+```typescript
+import definePlugin, { OptionType } from "@utils/types";
+import { definePluginSettings } from "@api/Settings";
+import { EquicordDevs } from "@utils/constants";
+
+const settings = definePluginSettings({
+    enabled: {
+        type: OptionType.BOOLEAN,
+        description: "Enable feature",
+        default: true,
+    }
+});
+
+export default definePlugin({
+    name: "MyPlugin",
+    description: "Plugin description",
+    authors: [EquicordDevs.YourName],
+    dependencies: ["RequiredAPI"],
+    settings,
+
+    patches: [
+        {
+            find: "unique string",
+            replacement: {
+                match: /pattern/,
+                replace: "replacement"
+            },
+            predicate: () => settings.store.enabled
+        }
+    ],
+
+    contextMenus: {
+        "user-context": (children, props) => {
+            // Add menu items
+        }
+    },
+
+    headerBarButton: {
+        location: "channeltoolbar",
+        icon: MyIcon,
+        render: MyButton,
+        priority: 250
+    },
+
+    start() {
+        // Initialize
+        FluxDispatcher.subscribe("EVENT", handler);
+        this.handler = handler;
+    },
+
+    stop() {
+        // Complete cleanup
+        if (this.handler) {
+            FluxDispatcher.unsubscribe("EVENT", this.handler);
+        }
+        cache.clear();
+        if (modalKey) {
+            closeModal(modalKey);
+            modalKey = null;
+        }
+    }
+});
+```
+
+---
+
+## Performance Checklist
+
+- [ ] **Virtualize large lists** (1000+ items)
+- [ ] **Use React.memo** for expensive components
+- [ ] **Memoize callbacks** with useCallback
+- [ ] **Memoize computations** with useMemo
+- [ ] **Debounce/throttle** expensive operations
+- [ ] **Use requestAnimationFrame** for scroll/visual updates
+- [ ] **Preload adjacent items** for smooth navigation
+- [ ] **Clean up all subscriptions** in stop()
+- [ ] **Clear all intervals/timeouts** in stop()
+- [ ] **Abort async operations** when component unmounts
+- [ ] **Filter failed items** to prevent rendering issues
+- [ ] **Use ErrorBoundary** for user-facing components
+
+---
+
+## Memory Checklist
+
+- [ ] **Clear all caches** in stop()
+- [ ] **Remove all event listeners** in cleanup
+- [ ] **Clear all intervals/timeouts** in cleanup
+- [ ] **Abort all pending requests** in cleanup
+- [ ] **Close all modals** in stop()
+- [ ] **Clear all refs** (set to null)
+- [ ] **Remove all state listeners** in cleanup
+- [ ] **Reset all global state** in stop()
+
+---
+
+## Error Handling Checklist
+
+- [ ] **Wrap async operations** in try-catch
+- [ ] **Handle AbortError** separately (don't show error)
+- [ ] **Show user-friendly error messages** via Toasts
+- [ ] **Log errors** with Logger for debugging
+- [ ] **Use ErrorBoundary** for components
+- [ ] **Validate inputs early** before processing
+- [ ] **Check array bounds** before access
+- [ ] **Use optional chaining** for safe property access
+- [ ] **Add safety checks** for undefined APIs
+
+---
+
+This reference sheet should be your go-to guide for efficient, maintainable, and performant Equicord plugin development!

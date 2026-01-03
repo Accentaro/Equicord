@@ -1,0 +1,826 @@
+---
+alwaysApply: true
+---
+
+# Equicord API Ruleset
+
+**CRITICAL**: Always use existing APIs from `src/api/` instead of creating custom implementations. These APIs provide standardized, tested, and maintainable ways to extend Discord's functionality.
+
+## Import Path
+
+All APIs are exported from `src/api/index.ts`. Import them like:
+```typescript
+import { APIName } from "@api";
+// or
+import { functionName } from "@api/APIName";
+```
+
+---
+
+## Plugin Registration APIs
+
+### Commands API
+
+**USE**: `Commands` from `@api/Commands`
+
+**Available functions:**
+- `registerCommand(command, pluginName)` - Register a slash command
+- `unregisterCommand(name)` - Unregister a command
+- `prepareOption(opt)` - Prepare command option for Discord
+- `OptionalMessageOption` - Optional message argument
+- `RequiredMessageOption` - Required message argument
+- `findOption<T>(args, name, fallbackValue?)` - Get option value from args
+- `sendBotMessage(channelId, message)` - Send message as Clyde
+- `generateId()` - Generate message ID
+
+**DO NOT**: Directly manipulate Discord's command registry
+
+```typescript
+import { Commands } from "@api";
+import { ApplicationCommandOptionType, ApplicationCommandType } from "@api/Commands";
+
+Commands.registerCommand({
+    name: "mycommand",
+    description: "My command",
+    type: ApplicationCommandType.CHAT_INPUT,
+    options: [{
+        name: "text",
+        description: "Some text",
+        type: ApplicationCommandOptionType.STRING,
+        required: true
+    }],
+    execute: (args, ctx) => {
+        const text = Commands.findOption<string>(args, "text");
+        return Commands.sendBotMessage(ctx.channel.id, {
+            content: `You said: ${text}`
+        });
+    }
+}, "MyPlugin");
+```
+
+---
+
+### Badges API
+
+**USE**: `Badges` from `@api/Badges`
+
+**Available functions:**
+- `addProfileBadge(badge)` - Add badge to user profiles
+- `removeProfileBadge(badge)` - Remove badge
+- `BadgePosition` enum - START, END
+
+**DO NOT**: Manually patch profile components
+
+```typescript
+import { Badges } from "@api";
+import { BadgePosition } from "@api/Badges";
+
+Badges.addProfileBadge({
+    description: "My Badge",
+    iconSrc: "https://example.com/badge.png",
+    position: BadgePosition.START,
+    shouldShow: (userInfo) => userInfo.userId === "123456789"
+});
+```
+
+---
+
+### Context Menu API
+
+**USE**: `ContextMenu` from `@api/ContextMenu`
+
+**Available functions:**
+- `addContextMenuPatch(navId, patch)` - Patch specific context menu
+- `addGlobalContextMenuPatch(patch)` - Patch all context menus
+- `removeContextMenuPatch(navId, patch)` - Remove patch
+- `removeGlobalContextMenuPatch(patch)` - Remove global patch
+- `findGroupChildrenByChildId(id, children, matchSubstring?)` - Find menu group
+
+**DO NOT**: Directly modify context menu React elements
+
+```typescript
+import { ContextMenu } from "@api";
+import { Menu } from "@webpack/common";
+
+ContextMenu.addContextMenuPatch("user-context", (children, props) => {
+    const group = ContextMenu.findGroupChildrenByChildId("block", children);
+    if (!group) return;
+    
+    group.push(
+        <Menu.MenuItem
+            id="my-action"
+            label="My Action"
+            action={() => console.log("Clicked!", props.user)}
+        />
+    );
+});
+```
+
+---
+
+## UI Extension APIs
+
+### Chat Buttons API
+
+**USE**: `ChatButtons` from `@api/ChatButtons`
+
+**Available functions:**
+- `addChatBarButton(id, render, icon)` - Add button to chat input
+- `removeChatBarButton(id)` - Remove button
+- `ChatBarButton` component - Pre-built button component
+
+**DO NOT**: Manually inject buttons into chat input
+
+```typescript
+import { ChatButtons } from "@api";
+import { ChatBarButton } from "@api/ChatButtons";
+import { MyIcon } from "./MyIcon";
+
+ChatButtons.addChatBarButton("my-button", (props) => (
+    <ChatBarButton
+        tooltip="My Button"
+        onClick={() => console.log("Clicked!")}
+    >
+        <MyIcon />
+    </ChatBarButton>
+), MyIcon);
+```
+
+---
+
+### Header Bar API
+
+**USE**: `HeaderBar` from `@api/HeaderBar`
+
+**Available functions:**
+- `addHeaderBarButton(id, render, priority?)` - Add button to header bar
+- `removeHeaderBarButton(id)` - Remove button
+- `addChannelToolbarButton(id, render, priority?)` - Add to channel toolbar
+- `removeChannelToolbarButton(id)` - Remove from toolbar
+- `HeaderBarButton` component - Header bar button component
+- `ChannelToolbarButton` component - Toolbar button component
+
+**DO NOT**: Manually patch header bar components
+
+```typescript
+import { HeaderBar } from "@api";
+import { HeaderBarButton } from "@api/HeaderBar";
+import { MyIcon } from "./MyIcon";
+
+HeaderBar.addHeaderBarButton("my-header-button", () => (
+    <HeaderBarButton
+        icon={MyIcon}
+        tooltip="My Button"
+        onClick={() => console.log("Clicked!")}
+    />
+), 0);
+```
+
+---
+
+### User Area API
+
+**USE**: `UserArea` from `@api/UserArea`
+
+**Available functions:**
+- `addUserAreaButton(id, render, priority?)` - Add button to user area
+- `removeUserAreaButton(id)` - Remove button
+- `UserAreaButton` component - User area button component
+
+**DO NOT**: Manually patch user area components
+
+```typescript
+import { UserArea } from "@api";
+import { UserAreaButton } from "@api/UserArea";
+import { MyIcon } from "./MyIcon";
+
+UserArea.addUserAreaButton("my-user-button", (props) => (
+    <UserAreaButton
+        icon={<MyIcon />}
+        tooltipText="My Button"
+        onClick={() => console.log("Clicked!")}
+    />
+), 0);
+```
+
+---
+
+### Message Popover API
+
+**USE**: `MessagePopover` from `@api/MessagePopover`
+
+**Available functions:**
+- `addMessagePopoverButton(id, render, icon)` - Add button to message popover
+- `removeMessagePopoverButton(id)` - Remove button
+
+**DO NOT**: Manually patch message popover components
+
+```typescript
+import { MessagePopover } from "@api";
+import { MyIcon } from "./MyIcon";
+
+MessagePopover.addMessagePopoverButton("my-popover-button", (message) => ({
+    label: "My Action",
+    icon: MyIcon,
+    message,
+    channel: message.channel,
+    onClick: () => console.log("Clicked!", message)
+}), MyIcon);
+```
+
+---
+
+### Message Accessories API
+
+**USE**: `MessageAccessories` from `@api/MessageAccessories`
+
+**Available functions:**
+- `addMessageAccessory(id, render, position?)` - Add accessory to messages
+- `removeMessageAccessory(id)` - Remove accessory
+
+**DO NOT**: Manually patch message rendering
+
+```typescript
+import { MessageAccessories } from "@api";
+
+MessageAccessories.addMessageAccessory("my-accessory", (props) => {
+    return <div>My Accessory</div>;
+}, 0); // Position 0 = beginning, negative = from end
+```
+
+---
+
+### Message Decorations API
+
+**USE**: `MessageDecorations` from `@api/MessageDecorations`
+
+**Available functions:**
+- `addMessageDecoration(id, decoration)` - Add decoration to message author
+- `removeMessageDecoration(id)` - Remove decoration
+
+**DO NOT**: Manually patch message author rendering
+
+```typescript
+import { MessageDecorations } from "@api";
+
+MessageDecorations.addMessageDecoration("my-decoration", (props) => {
+    if (props.message.author.id === "123456789") {
+        return <span className="my-decoration">⭐</span>;
+    }
+    return null;
+});
+```
+
+---
+
+### Member List Decorators API
+
+**USE**: `MemberListDecorators` from `@api/MemberListDecorators`
+
+**Available functions:**
+- `addMemberListDecorator(id, render, onlyIn?)` - Add decorator to member list
+- `removeMemberListDecorator(id)` - Remove decorator
+- `onlyIn` options: "guilds" | "dms"
+
+**DO NOT**: Manually patch member list components
+
+```typescript
+import { MemberListDecorators } from "@api";
+
+MemberListDecorators.addMemberListDecorator("my-decorator", (props) => {
+    if (props.type === "guild") {
+        return <span>Guild Only</span>;
+    }
+    return null;
+}, "guilds");
+```
+
+---
+
+### Nickname Icons API
+
+**USE**: `NicknameIcons` from `@api/NicknameIcons`
+
+**Available functions:**
+- `addNicknameIcon(id, factory, priority?)` - Add icon to nickname in profiles
+- `removeNicknameIcon(id)` - Remove icon
+
+**DO NOT**: Manually patch nickname rendering
+
+```typescript
+import { NicknameIcons } from "@api";
+
+NicknameIcons.addNicknameIcon("my-icon", (props) => {
+    return <span className="my-icon">🔒</span>;
+}, 0);
+```
+
+---
+
+### Server List API
+
+**USE**: `ServerList` from `@api/ServerList`
+
+**Available functions:**
+- `addServerListElement(position, renderFunction)` - Add element to server list
+- `removeServerListElement(position, renderFunction)` - Remove element
+- `ServerListRenderPosition` enum - Above, In, Below
+
+**DO NOT**: Manually patch server list components
+
+```typescript
+import { ServerList } from "@api";
+import { ServerListRenderPosition } from "@api/ServerList";
+
+const MyServerElement = () => <div>My Server</div>;
+
+ServerList.addServerListElement(ServerListRenderPosition.Below, MyServerElement);
+```
+
+---
+
+## Event & Message APIs
+
+### Message Events API
+
+**USE**: `MessageEvents` from `@api/MessageEvents`
+
+**Available functions:**
+- `addMessagePreSendListener(listener)` - Listen before message is sent
+- `removeMessagePreSendListener(listener)` - Remove listener
+- `addMessagePreEditListener(listener)` - Listen before message is edited
+- `removeMessagePreEditListener(listener)` - Remove listener
+- `addMessageClickListener(listener)` - Listen to message clicks
+- `removeMessageClickListener(listener)` - Remove listener
+
+**DO NOT**: Directly patch message send/edit handlers
+
+```typescript
+import { MessageEvents } from "@api";
+
+// Intercept message sending
+const listener = MessageEvents.addMessagePreSendListener((channelId, messageObj, options) => {
+    // Modify messageObj.content, etc.
+    // Return { cancel: true } to cancel sending
+});
+
+// Listen to message clicks
+MessageEvents.addMessageClickListener((message, channel, event) => {
+    console.log("Message clicked:", message.id);
+});
+```
+
+---
+
+### Message Updater API
+
+**USE**: `MessageUpdater` from `@api/MessageUpdater`
+
+**Available functions:**
+- `updateMessage(channelId, messageId, fields?)` - Update and re-render message
+
+**DO NOT**: Manually update message cache
+
+```typescript
+import { MessageUpdater } from "@api";
+
+// Update message content
+MessageUpdater.updateMessage(channelId, messageId, {
+    content: "Updated content"
+});
+
+// Just re-render without changes
+MessageUpdater.updateMessage(channelId, messageId);
+```
+
+---
+
+## Storage & Settings APIs
+
+### DataStore API
+
+**USE**: `DataStore` from `@api/DataStore`
+
+**Available functions:**
+- `get<T>(key, customStore?)` - Get value
+- `set(key, value, customStore?)` - Set value
+- `update<T>(key, updater, customStore?)` - Update value atomically
+- `del(key, customStore?)` - Delete key
+- `getMany<T>(keys, customStore?)` - Get multiple values
+- `setMany(entries, customStore?)` - Set multiple values
+- `delMany(keys, customStore?)` - Delete multiple keys
+- `clear(customStore?)` - Clear all
+- `keys<KeyType>(customStore?)` - Get all keys
+- `values<T>(customStore?)` - Get all values
+- `entries<KeyType, ValueType>(customStore?)` - Get all entries
+
+**DO NOT**: Use localStorage for large data or complex types
+
+```typescript
+import { DataStore } from "@api";
+
+// Store data
+await DataStore.set("myPlugin:data", { key: "value" });
+
+// Get data
+const data = await DataStore.get<{ key: string }>("myPlugin:data");
+
+// Update atomically
+await DataStore.update("myPlugin:counter", (old = 0) => old + 1);
+```
+
+---
+
+### Settings API
+
+**USE**: `Settings` from `@api/Settings`
+
+**Available functions:**
+- `Settings` - Proxied settings object (auto-saves)
+- `PlainSettings` - Unproxied settings (read-only)
+- `useSettings(paths?)` - React hook for settings
+- `definePluginSettings(def, checks?)` - Define plugin settings
+- `migratePluginSettings(name, ...oldNames)` - Migrate plugin settings
+- `migratePluginSetting(pluginName, newSetting, oldSetting)` - Migrate setting
+- `migrateSettingFromPlugin(newPlugin, newSetting, oldPlugin, oldSetting)` - Cross-plugin migration
+
+**DO NOT**: Access settings directly without using the API
+
+```typescript
+import { Settings, definePluginSettings } from "@api";
+import { OptionType } from "@utils/types";
+
+// Define settings
+const pluginSettings = definePluginSettings({
+    mySetting: {
+        type: OptionType.STRING,
+        description: "My setting",
+        default: "default value"
+    }
+});
+
+// In plugin definition
+export default definePlugin({
+    name: "MyPlugin",
+    settings: pluginSettings,
+    start() {
+        // Access settings
+        const value = pluginSettings.store.mySetting;
+        
+        // Update settings (auto-saves)
+        pluginSettings.store.mySetting = "new value";
+    }
+});
+
+// In React component
+function MyComponent() {
+    const settings = pluginSettings.use();
+    return <div>{settings.mySetting}</div>;
+}
+```
+
+---
+
+### User Settings API
+
+**USE**: `UserSettings` from `@api/UserSettings`
+
+**Available functions:**
+- `getUserSetting<T>(group, name)` - Get Discord user setting
+- `getUserSettingLazy<T>(group, name)` - Lazy getter
+- `UserSettings` - All user settings object
+
+**DO NOT**: Directly access Discord's user settings
+
+```typescript
+import { UserSettings } from "@api";
+
+// Requires UserSettingsAPI plugin as dependency
+const textAndImages = UserSettings.getUserSetting("textAndImages", "renderSpoilers");
+if (textAndImages) {
+    const value = textAndImages.getSetting();
+    textAndImages.updateSetting(!value);
+}
+```
+
+---
+
+### User Setting Definitions API
+
+**USE**: `UserSettingDefinitions` from `@api/UserSettingDefinitions`
+
+**Available functions:**
+- `getUserSettingDefinition<T>(group, name)` - Get setting definition
+- `getUserSettingDefinitionLazy<T>(group, name)` - Lazy getter
+- `UserSettingsDefinitions` - All definitions object
+
+**DO NOT**: Directly access Discord's setting definitions
+
+```typescript
+import { UserSettingDefinitions } from "@api";
+
+// Requires UserSettingDefinitionsAPI plugin as dependency
+const definition = UserSettingDefinitions.getUserSettingDefinition("textAndImages", "renderSpoilers");
+if (definition) {
+    // Access definition metadata
+    console.log(definition);
+}
+```
+
+---
+
+## Style & Theme APIs
+
+### Styles API
+
+**USE**: `Styles` from `@api/Styles`
+
+**Available functions:**
+- `enableStyle(name)` - Enable managed style
+- `disableStyle(name)` - Disable managed style
+- `toggleStyle(name)` - Toggle style
+- `isStyleEnabled(name)` - Check if enabled
+- `setStyleClassNames(name, classNames, recompile?)` - Set CSS class name variables
+- `compileStyle(style)` - Recompile style
+
+**DO NOT**: Manually inject styles without using managed styles
+
+```typescript
+import { Styles } from "@api";
+import pluginStyle from "./plugin.css?managed";
+
+// In plugin start()
+Styles.enableStyle(pluginStyle);
+
+// Set dynamic class names
+Styles.setStyleClassNames(pluginStyle, {
+    thin: "thin-31rlnD",
+    scrollerBase: "scrollerBase-_bVAAt"
+});
+```
+
+---
+
+## Notification & UI Feedback APIs
+
+### Notices API
+
+**USE**: `Notices` from `@api/Notices`
+
+**Available functions:**
+- `showNotice(message, buttonText, onOkClick)` - Show notice (snackbar)
+
+**DO NOT**: Create custom notice implementations
+
+```typescript
+import { Notices } from "@api";
+
+Notices.showNotice(
+    "Update available!",
+    "Update",
+    () => {
+        // Handle update
+    }
+);
+```
+
+---
+
+### Notifications API
+
+**USE**: `Notifications` from `@api/Notifications`
+
+**Available functions:**
+- `showNotification(data)` - Show notification
+- `requestPermission()` - Request notification permission
+
+**DO NOT**: Use browser Notification API directly
+
+```typescript
+import { Notifications } from "@api";
+
+Notifications.showNotification({
+    title: "New Message",
+    body: "You have a new message",
+    icon: "https://example.com/icon.png",
+    onClick: () => {
+        // Handle click
+    },
+    permanent: false
+});
+```
+
+---
+
+## Audio API
+
+### Audio Player API
+
+**USE**: `AudioPlayer` from `@api/AudioPlayer`
+
+**Available functions:**
+- `createAudioPlayer(audio, options?)` - Create audio player
+- `playAudio(audio, options?)` - Play audio instantly
+- `identifyAudioType(audio)` - Identify audio type
+- `addAudioProcessor(key, processor)` - Add audio processor
+- `removeAudioProcessor(key)` - Remove processor
+- `defaultAudioNames()` - Get Discord audio filenames
+- `AudioType` enum - URL, DATA, BLOB, PATH, DISCORD, OTHER
+
+**DO NOT**: Use HTMLAudioElement directly for Discord audio
+
+```typescript
+import { AudioPlayer } from "@api";
+import { AudioType } from "@api/AudioPlayer";
+
+// Play Discord sound
+const player = AudioPlayer.playAudio("discodo", {
+    volume: 50,
+    speed: 1.0
+});
+
+// Play external URL
+const player2 = AudioPlayer.createAudioPlayer("https://example.com/sound.mp3", {
+    volume: 100,
+    onEnded: () => console.log("Finished")
+});
+
+player2.play();
+
+// Add audio processor
+AudioPlayer.addAudioProcessor("my-plugin", (data) => {
+    if (data.type === AudioType.DISCORD) {
+        data.volume = 50; // Lower volume
+    }
+});
+```
+
+---
+
+## Plugin Management API
+
+### Plugin Manager API
+
+**USE**: `PluginManager` from `@api/PluginManager`
+
+**Available functions:**
+- `isPluginEnabled(name)` - Check if plugin is enabled
+- `isPluginRequired(name)` - Check if plugin is required
+- `startPlugin(plugin)` - Start plugin manually
+- `stopPlugin(plugin)` - Stop plugin manually
+- `addPatch(patch, pluginName, pluginPath?)` - Add patch manually
+
+**DO NOT**: Directly manipulate plugin state
+
+```typescript
+import { PluginManager } from "@api";
+
+if (PluginManager.isPluginEnabled("SomePlugin")) {
+    // Plugin is enabled
+}
+
+// Usually plugins are started automatically, but you can manually start/stop
+const plugin = Plugins["MyPlugin"];
+PluginManager.startPlugin(plugin);
+```
+
+---
+
+## General Guidelines
+
+1. **Always check `@api` first** before creating custom implementations
+2. **Use proper cleanup** - Remove listeners/patches in plugin `stop()` method
+3. **Follow plugin lifecycle** - Register APIs in `start()`, unregister in `stop()`
+4. **Use ErrorBoundary** - APIs automatically wrap components, but be aware of error handling
+5. **Check dependencies** - Some APIs require specific plugin dependencies
+6. **Use TypeScript types** - All APIs are fully typed
+7. **Read API documentation** - Each API file has JSDoc comments
+
+---
+
+## Common Mistakes to Avoid
+
+❌ **DON'T**: Manually patch UI components
+```typescript
+// BAD
+const MessageComponent = findByPropsLazy("message");
+// Patch it manually...
+
+// GOOD
+import { MessageAccessories } from "@api";
+MessageAccessories.addMessageAccessory("my-id", render);
+```
+
+❌ **DON'T**: Use localStorage for complex data
+```typescript
+// BAD
+localStorage.setItem("data", JSON.stringify(complexObject));
+
+// GOOD
+import { DataStore } from "@api";
+await DataStore.set("myPlugin:data", complexObject);
+```
+
+❌ **DON'T**: Directly access Discord settings
+```typescript
+// BAD
+const settings = UserSettingsActionCreators.getCurrentValue();
+
+// GOOD
+import { UserSettings } from "@api";
+const setting = UserSettings.getUserSetting("group", "name");
+```
+
+❌ **DON'T**: Create custom notification systems
+```typescript
+// BAD
+const notification = new Notification("Title", { body: "Body" });
+
+// GOOD
+import { Notifications } from "@api";
+Notifications.showNotification({ title: "Title", body: "Body" });
+```
+
+❌ **DON'T**: Forget to cleanup in stop()
+```typescript
+// BAD
+export default definePlugin({
+    start() {
+        MessageEvents.addMessageClickListener(listener);
+    }
+    // No cleanup!
+});
+
+// GOOD
+export default definePlugin({
+    start() {
+        MessageEvents.addMessageClickListener(listener);
+    },
+    stop() {
+        MessageEvents.removeMessageClickListener(listener);
+    }
+});
+```
+
+---
+
+## Plugin Definition Integration
+
+Most APIs can be used directly in plugin definitions:
+
+```typescript
+import { definePlugin } from "@utils/types";
+import { definePluginSettings } from "@api/Settings";
+
+const settings = definePluginSettings({
+    enabled: {
+        type: OptionType.BOOLEAN,
+        description: "Enable feature",
+        default: true
+    }
+});
+
+export default definePlugin({
+    name: "MyPlugin",
+    description: "My plugin",
+    authors: [{ name: "Me", id: 123n }],
+    settings,
+    
+    // Use plugin definition properties
+    chatBarButton: {
+        render: (props) => <MyButton />,
+        icon: MyIcon
+    },
+    
+    messagePopoverButton: {
+        render: (message) => ({ label: "Action", icon: MyIcon, onClick: () => {} }),
+        icon: MyIcon
+    },
+    
+    start() {
+        // Additional API registrations
+        MessageEvents.addMessageClickListener(this.handleClick);
+    },
+    
+    stop() {
+        MessageEvents.removeMessageClickListener(this.handleClick);
+    }
+});
+```
+
+---
+
+## When to Create New APIs
+
+Only create new APIs if:
+1. The functionality doesn't exist in `@api`
+2. It's a genuinely new extension point
+3. It will be reused by multiple plugins
+4. You've confirmed no similar API exists
+
+If you create a new API, follow existing patterns:
+- Export from `src/api/index.ts`
+- Provide add/remove functions
+- Use ErrorBoundary for React components
+- Include proper TypeScript types
+- Document with JSDoc comments

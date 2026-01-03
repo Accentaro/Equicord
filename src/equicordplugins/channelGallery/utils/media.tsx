@@ -29,30 +29,83 @@ function isVideoExt(ext: string): boolean {
     return VIDEO_EXTS.has(ext);
 }
 
+/**
+ * Normalize URL to a canonical form for deduplication
+ * Removes size parameters, CDN variants, and other query params that don't affect the actual media
+ */
 function extractOriginalUrl(url: string): string {
     if (!url) return url;
     try {
         const u = new URL(url);
-        // Instagram
-        if (u.hostname.includes("instagram.com") || u.hostname.includes("cdninstagram.com")) {
+        const hostname = u.hostname.toLowerCase();
+        
+        // Instagram - preserve post ID structure
+        if (hostname.includes("instagram.com") || hostname.includes("cdninstagram.com")) {
             const match = url.match(/\/p\/([^/]+)/);
-            if (match) return url;
+            if (match) {
+                // Keep only the post ID, remove size variants
+                return `https://${u.hostname}/p/${match[1]}/`;
+            }
+            return url;
         }
-        // Tenor - try to get original
-        if (u.hostname.includes("tenor.com") || u.hostname.includes("media.tenor.com")) {
-            // Remove size parameters
-            u.searchParams.delete("width");
-            u.searchParams.delete("height");
+        
+        // Tenor - normalize to base URL
+        if (hostname.includes("tenor.com") || hostname.includes("media.tenor.com")) {
+            // Remove all query parameters
+            u.search = "";
             return u.toString();
         }
-        // Remove size parameters for other URLs
+        
+        // Discord CDN - normalize by removing size/format params
+        if (hostname.includes("discordapp.net") || hostname.includes("discordapp.com") || hostname.includes("discordusercontent.com")) {
+            // Remove size and format parameters but keep the file path
+            u.searchParams.delete("width");
+            u.searchParams.delete("height");
+            u.searchParams.delete("size");
+            u.searchParams.delete("format");
+            // Keep ex parameter (expiration) as it might affect availability
+            return u.toString();
+        }
+        
+        // Generic normalization - remove common size/format parameters
         u.searchParams.delete("width");
         u.searchParams.delete("height");
         u.searchParams.delete("size");
+        u.searchParams.delete("format");
+        u.searchParams.delete("w");
+        u.searchParams.delete("h");
+        u.searchParams.delete("resize");
+        u.searchParams.delete("quality");
+        
         return u.toString();
     } catch {
         return url;
     }
+}
+
+/**
+ * Generate a normalized URL key for deduplication
+ * This is more aggressive than extractOriginalUrl - it focuses on the actual media content
+ */
+function normalizeUrlForDedup(url: string): string {
+    if (!url) return url;
+    const normalized = extractOriginalUrl(url);
+    
+    // For Discord CDN, also normalize the path to remove size variants in the filename
+    try {
+        const u = new URL(normalized);
+        if (u.hostname.includes("discordapp.net") || u.hostname.includes("discordapp.com") || u.hostname.includes("discordusercontent.com")) {
+            // Discord CDN URLs often have size in the path like /attachments/.../image.png?size=1024
+            // We want to match the same image regardless of size parameter
+            const pathParts = u.pathname.split("/");
+            // Keep the path structure but normalize
+            return `${u.protocol}//${u.hostname}${u.pathname}`;
+        }
+    } catch {
+        // If URL parsing fails, return normalized
+    }
+    
+    return normalized;
 }
 
 function isTenorStatic(url: string, contentType?: string): boolean {
@@ -174,6 +227,55 @@ export function extractImages(
     // Track Tenor base IDs to deduplicate static vs animated versions
     // Maps messageId -> Set of Tenor base IDs that have animated versions
     const tenorAnimatedByMessage = new Map<string, Set<string>>();
+    
+    // Track normalized URLs across all messages to prevent duplicates
+    // Maps normalizedUrl -> GalleryItem (keeps the first occurrence)
+    const seenUrls = new Map<string, GalleryItem>();
+    
+    // Also track proxy URLs for better deduplication (embeds often use proxy URLs)
+    const seenProxyUrls = new Map<string, GalleryItem>();
+    
+    /**
+     * Check if a URL (or its proxy) has been seen before
+     * Returns the existing item if found, null otherwise
+     */
+    const findDuplicate = (url: string, proxyUrl?: string): GalleryItem | null => {
+        const normalizedUrl = normalizeUrlForDedup(url);
+        const existing = seenUrls.get(normalizedUrl);
+        if (existing) return existing;
+        
+        // Also check proxy URL if provided
+        if (proxyUrl) {
+            const normalizedProxy = normalizeUrlForDedup(proxyUrl);
+            const existingProxy = seenProxyUrls.get(normalizedProxy);
+            if (existingProxy) return existingProxy;
+            
+            // Also check if proxy matches any main URL
+            for (const [seenUrl, item] of seenUrls.entries()) {
+                if (item.proxyUrl) {
+                    const seenProxyNormalized = normalizeUrlForDedup(item.proxyUrl);
+                    if (seenProxyNormalized === normalizedProxy) {
+                        return item;
+                    }
+                }
+            }
+        }
+        
+        return null;
+    };
+    
+    /**
+     * Register a URL and its proxy for deduplication tracking
+     */
+    const registerUrl = (item: GalleryItem, url: string, proxyUrl?: string): void => {
+        const normalizedUrl = normalizeUrlForDedup(url);
+        seenUrls.set(normalizedUrl, item);
+        
+        if (proxyUrl) {
+            const normalizedProxy = normalizeUrlForDedup(proxyUrl);
+            seenProxyUrls.set(normalizedProxy, item);
+        }
+    };
 
     for (const m of messages) {
         if (!m) continue;
@@ -261,19 +363,47 @@ export function extractImages(
 
                 // Extract original URL
                 const originalUrl = extractOriginalUrl(url);
+                const normalizedProxyUrl = proxyUrl ? extractOriginalUrl(proxyUrl) : undefined;
+                
+                // Check if we've already seen this URL (cross-message deduplication)
+                const existingItem = findDuplicate(originalUrl, normalizedProxyUrl);
+                if (existingItem) {
+                    // Prefer the item with better metadata (has dimensions, filename, etc.)
+                    const hasBetterMetadata = (width && height) || filename;
+                    const existingHasMetadata = existingItem.width && existingItem.height || existingItem.filename;
+                    
+                    // Skip if existing item has better metadata, or if this is a duplicate within the same message
+                    if (existingHasMetadata && !hasBetterMetadata) {
+                        continue;
+                    }
+                    
+                    // If this item has better metadata, replace the existing one
+                    if (hasBetterMetadata && !existingHasMetadata) {
+                        const existingIndex = items.findIndex(item => item.stableId === existingItem.stableId);
+                        if (existingIndex >= 0) {
+                            items.splice(existingIndex, 1);
+                        }
+                    } else {
+                        // Both have similar metadata or this is a duplicate, skip
+                        continue;
+                    }
+                }
 
-                items.push({
+                const newItem: GalleryItem = {
                     ...base,
                     stableId: `${messageId}:${originalUrl}`,
                     url: originalUrl,
-                    proxyUrl: proxyUrl ? extractOriginalUrl(proxyUrl) : undefined,
+                    proxyUrl: normalizedProxyUrl,
                     filename,
                     width,
                     height,
                     isAnimated: animated,
                     isVideo: isVideo,
                     contentType
-                });
+                };
+                
+                items.push(newItem);
+                registerUrl(newItem, originalUrl, normalizedProxyUrl);
             }
         }
 
@@ -319,19 +449,30 @@ export function extractImages(
                             if (thumbUrl.includes("/clip/") || thumbUrl.includes("youtube.com/clip")) {
                                 continue;
                             }
-                            items.push({
-                                ...base,
-                                stableId: `${messageId}:${embedUrl}`,
-                                url: embedUrl,
-                                proxyUrl: thumb.proxyURL ? String(thumb.proxyURL) : (thumb.proxy_url ? String(thumb.proxy_url) : undefined),
-                                width: typeof thumb.width === "number" ? thumb.width : undefined,
-                                height: typeof thumb.height === "number" ? thumb.height : undefined,
-                                filename: undefined,
-                                isAnimated: true,
-                                isVideo: true,
-                                isEmbed: true,
-                                embedUrl: embedUrl
-                            });
+                        const normalizedProxyUrl = thumb.proxyURL ? String(thumb.proxyURL) : (thumb.proxy_url ? String(thumb.proxy_url) : undefined);
+                        
+                        // Check for duplicates (same embed URL or thumbnail in different messages)
+                        const existingItem = findDuplicate(embedUrl, normalizedProxyUrl);
+                        if (existingItem) {
+                            continue;
+                        }
+                        
+                        const newItem: GalleryItem = {
+                            ...base,
+                            stableId: `${messageId}:${embedUrl}`,
+                            url: embedUrl,
+                            proxyUrl: normalizedProxyUrl,
+                            width: typeof thumb.width === "number" ? thumb.width : undefined,
+                            height: typeof thumb.height === "number" ? thumb.height : undefined,
+                            filename: undefined,
+                            isAnimated: true,
+                            isVideo: true,
+                            isEmbed: true,
+                            embedUrl: embedUrl
+                        };
+                        
+                        items.push(newItem);
+                        registerUrl(newItem, embedUrl, normalizedProxyUrl);
                         }
                         continue;
                     }
@@ -355,18 +496,30 @@ export function extractImages(
                             tenorAnimatedByMessage.get(messageId)!.add(tenorBaseId);
                         }
 
-                        items.push({
+                        const originalVideoUrl = extractOriginalUrl(videoUrl);
+                        const normalizedProxyUrl = proxyUrl ? extractOriginalUrl(proxyUrl) : undefined;
+                        
+                        // Check for duplicates
+                        const existingItem = findDuplicate(originalVideoUrl, normalizedProxyUrl);
+                        if (existingItem) {
+                            continue;
+                        }
+                        
+                        const newItem: GalleryItem = {
                             ...base,
-                            stableId: `${messageId}:${videoUrl}`,
-                            url: extractOriginalUrl(videoUrl),
-                            proxyUrl: proxyUrl ? extractOriginalUrl(proxyUrl) : undefined,
+                            stableId: `${messageId}:${originalVideoUrl}`,
+                            url: originalVideoUrl,
+                            proxyUrl: normalizedProxyUrl,
                             width: typeof video.width === "number" ? video.width : undefined,
                             height: typeof video.height === "number" ? video.height : undefined,
                             filename: undefined,
                             isAnimated: true,
                             isVideo: true,
                             contentType: video.content_type ? String(video.content_type) : undefined
-                        });
+                        };
+                        
+                        items.push(newItem);
+                        registerUrl(newItem, originalVideoUrl, normalizedProxyUrl);
                     }
 
                     // Handle images and thumbnails
@@ -405,17 +558,48 @@ export function extractImages(
                             animated = false;
                         }
 
-                        items.push({
+                        const originalUrl = extractOriginalUrl(url);
+                        const normalizedProxyUrl = source.proxyURL ? extractOriginalUrl(String(source.proxyURL)) : (source.proxy_url ? extractOriginalUrl(String(source.proxy_url)) : undefined);
+                        
+                        // Check if we've already seen this URL (could be from attachment or previous embed)
+                        const existingItem = findDuplicate(originalUrl, normalizedProxyUrl);
+                        if (existingItem) {
+                            // For embed thumbnails, be more aggressive: always skip if we have an attachment
+                            // (attachments have filenames and are generally better quality)
+                            if (existingItem.filename) {
+                                // Existing item is an attachment, skip this embed thumbnail
+                                continue;
+                            }
+                            
+                            // Skip embed thumbnails that duplicate other embeds unless this has better dimensions
+                            const hasBetterMetadata = typeof source.width === "number" && typeof source.height === "number";
+                            const existingHasMetadata = existingItem.width && existingItem.height;
+                            
+                            if (!hasBetterMetadata || existingHasMetadata) {
+                                continue;
+                            }
+                            
+                            // Replace if this embed has better metadata
+                            const existingIndex = items.findIndex(item => item.stableId === existingItem.stableId);
+                            if (existingIndex >= 0) {
+                                items.splice(existingIndex, 1);
+                            }
+                        }
+
+                        const newItem: GalleryItem = {
                             ...base,
-                            stableId: `${messageId}:${extractOriginalUrl(url)}`,
-                            url: extractOriginalUrl(url),
-                            proxyUrl: source.proxyURL ? extractOriginalUrl(String(source.proxyURL)) : (source.proxy_url ? extractOriginalUrl(String(source.proxy_url)) : undefined),
+                            stableId: `${messageId}:${originalUrl}`,
+                            url: originalUrl,
+                            proxyUrl: normalizedProxyUrl,
                             width: typeof source.width === "number" ? source.width : undefined,
                             height: typeof source.height === "number" ? source.height : undefined,
                             filename: undefined,
                             isAnimated: animated,
                             contentType: source.content_type ? String(source.content_type) : undefined
-                        });
+                        };
+                        
+                        items.push(newItem);
+                        registerUrl(newItem, originalUrl, normalizedProxyUrl);
                     }
                 }
             }

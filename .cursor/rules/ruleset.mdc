@@ -1,0 +1,721 @@
+---
+alwaysApply: true
+---
+
+# Equicord Utils Ruleset
+
+**CRITICAL**: Always use existing utilities from `src/utils/` instead of creating new functions. This ensures consistency, reduces code duplication, and maintains compatibility with the codebase.
+
+## Import Path
+
+All utilities are exported from `src/utils/index.ts`. Import them like:
+```typescript
+import { utilityName } from "@utils";
+```
+
+---
+
+## Core Utilities
+
+### Logging
+
+**USE**: `Logger` from `@utils/Logger`
+
+**DO NOT**: Create custom console.log wrappers or logging utilities
+
+```typescript
+import { Logger } from "@utils";
+
+const logger = new Logger("PluginName", "white");
+logger.log("Info message");
+logger.info("Info message");
+logger.warn("Warning message");
+logger.error("Error message");
+logger.debug("Debug message");
+```
+
+---
+
+### React Utilities
+
+**USE**: `react.tsx` utilities from `@utils/react`
+
+**Available hooks and utilities:**
+- `useAwaiter<T>(factory, opts?)` - Await promises in React components
+- `useForceUpdater()` - Force component rerender
+- `useIntersection(intersectOnly?)` - Check if element is on screen
+- `useTimer({ interval, deps })` - Timer hook
+- `useFixedTimer({ interval, initialTime })` - Fixed timer hook
+- `useCleanupEffect(effect, deps?)` - Effect with cleanup
+- `isPrimitiveReactNode(node)` - Check if React node is primitive
+- `NoopComponent` - Empty component that returns null
+
+**DO NOT**: Create custom React hooks for these purposes
+
+```typescript
+import { useAwaiter, useForceUpdater, useIntersection } from "@utils/react";
+
+// Await promises
+const [data, error, pending] = useAwaiter(() => fetchData(), {
+    fallbackValue: null,
+    onError: (e) => logger.error(e)
+});
+
+// Force rerender
+const forceUpdate = useForceUpdater();
+
+// Intersection observer
+const [ref, isIntersecting] = useIntersection();
+```
+
+---
+
+### Lazy Loading
+
+**USE**: `lazy.ts` and `lazyReact.tsx` from `@utils`
+
+**Available utilities:**
+- `makeLazy<T>(factory, attempts?)` - Create lazy getter function
+- `proxyLazy<T>(factory, attempts?)` - Create lazy proxy object
+- `LazyComponent<T>(factory, attempts?)` - Lazy React component
+
+**DO NOT**: Create custom lazy loading mechanisms
+
+```typescript
+import { makeLazy, proxyLazy, LazyComponent } from "@utils";
+
+// Lazy function
+const getModule = makeLazy(() => findByProps("something"));
+
+// Lazy proxy (can access properties immediately)
+const Module = proxyLazy(() => findByProps("something"));
+const value = Module.someProperty; // Evaluates on first access
+
+// Lazy React component
+const LazyModal = LazyComponent(() => import("./Modal"));
+```
+
+---
+
+### Discord-Specific Utilities
+
+**USE**: `discord.tsx` from `@utils/discord`
+
+**Available functions:**
+- `getIntlMessage(key, values?)` - Get internationalized message
+- `getIntlMessageFromHash(hashedKey, values?, originalKey?)` - Get i18n from hash
+- `openInviteModal(code)` - Open invite modal
+- `getCurrentChannel()` - Get current channel
+- `getCurrentGuild()` - Get current guild
+- `openPrivateChannel(userId)` - Open DM channel
+- `getTheme()` - Get current theme (Dark/Light)
+- `insertTextIntoChatInputBox(text)` - Insert text into chat
+- `copyWithToast(text, toastMessage?)` - Copy to clipboard with toast
+- `sendMessage(channelId, data, waitForChannelReady?, options?)` - Send message
+- `openImageModal(item, mediaModalProps?)` - Open image modal
+- `openUserProfile(id)` - Open user profile modal
+- `fetchUserProfile(id, options?, cache?)` - Fetch user profile
+- `getUniqueUsername(user)` - Get unique username (handles pomelo)
+- `getEmojiURL(id, animated, size)` - Get emoji URL (always GIF for animated)
+- `getGuildAcronym(guild)` - Get guild acronym
+- `hasGuildFeature(guild, feature)` - Check guild feature
+
+**DO NOT**: Directly use Discord webpack modules for these operations
+
+```typescript
+import { getCurrentChannel, sendMessage, copyWithToast } from "@utils/discord";
+
+const channel = getCurrentChannel();
+await sendMessage(channel.id, { content: "Hello!" });
+await copyWithToast("Copied!", "Text copied to clipboard");
+```
+
+---
+
+### Modal Utilities
+
+**USE**: `modal.tsx` from `@utils/modal`
+
+**Available components and functions:**
+- `openModal(render, options?, contextKey?)` - Open modal
+- `openModalLazy(render, options?)` - Open modal with lazy render
+- `closeModal(modalKey, contextKey?)` - Close modal
+- `closeAllModals()` - Close all modals
+- `ModalRoot`, `ModalHeader`, `ModalContent`, `ModalFooter`, `ModalCloseButton` - Modal components
+- `openMediaModal(props)` - Open media viewer modal
+- `ModalSize` enum - SMALL, MEDIUM, LARGE, DYNAMIC
+
+**DO NOT**: Create custom modal implementations
+
+```typescript
+import { openModal, ModalRoot, ModalHeader, ModalContent, ModalCloseButton, ModalSize } from "@utils/modal";
+
+openModal((props) => (
+    <ModalRoot {...props} size={ModalSize.MEDIUM}>
+        <ModalHeader>
+            <ModalCloseButton onClick={props.onClose} />
+        </ModalHeader>
+        <ModalContent>
+            Content here
+        </ModalContent>
+    </ModalRoot>
+));
+```
+
+---
+
+### Clipboard
+
+**USE**: `copyToClipboard` from `@utils/clipboard`
+
+**DO NOT**: Use `navigator.clipboard` directly (handles desktop/web differences)
+
+```typescript
+import { copyToClipboard } from "@utils/clipboard";
+
+await copyToClipboard("text to copy");
+```
+
+---
+
+### Local Storage
+
+**USE**: `localStorage` from `@utils/localStorage`
+
+**DO NOT**: Access `window.localStorage` directly
+
+```typescript
+import { localStorage } from "@utils/localStorage";
+
+localStorage.setItem("key", "value");
+const value = localStorage.getItem("key");
+```
+
+---
+
+### CSS Utilities
+
+**USE**: `css.ts` from `@utils/css`
+
+**Available functions:**
+- `createAndAppendStyle(id, target)` - Create and append style element
+- `classNameToSelector(name, prefix?)` - Convert class names to CSS selector
+- `classNameFactory(prefix?)` - Create class name factory function
+
+**DO NOT**: Manually create style elements or class name utilities
+
+```typescript
+import { createAndAppendStyle, classNameFactory } from "@utils/css";
+
+const style = createAndAppendStyle("my-plugin-style", document.head);
+style.textContent = ".my-class { color: red; }";
+
+const cl = classNameFactory("plugin-");
+const className = cl("base", ["item", "editable"], { selected: true, disabled: false });
+// => "plugin-base plugin-item plugin-editable plugin-selected"
+```
+
+---
+
+### Text Utilities
+
+**USE**: `text.ts` from `@utils/text`
+
+**Available functions:**
+- `wordsFromCamel(text)` - Convert camelCase to words
+- `wordsFromSnake(text)` - Convert snake_case to words
+- `wordsFromKebab(text)` - Convert kebab-case to words
+- `wordsFromPascal(text)` - Convert PascalCase to words
+- `wordsFromTitle(text)` - Convert Title Case to words
+- `wordsToCamel(words)` - Convert words to camelCase
+- `wordsToSnake(words)` - Convert words to SNAKE_CASE
+- `wordsToKebab(words)` - Convert words to kebab-case
+- `wordsToPascal(words)` - Convert words to PascalCase
+- `wordsToTitle(words)` - Convert words to Title Case
+- `formatDuration(time, unit, short?)` - Format duration (e.g., "1 day, 2 hours")
+- `formatDurationMs(ms, human?, seconds?)` - Format milliseconds
+- `humanFriendlyJoin(elements, mapper?)` - Join array with "and" (e.g., "1, 2 and 3")
+- `makeCodeblock(text, language?)` - Wrap text in code block
+- `stripIndent(strings, ...values)` - Strip indentation from template strings
+- `toInlineCode(s)` - Convert to inline code with zero-width spaces
+- `ZWSP` - Zero-width space constant
+
+**DO NOT**: Create custom text transformation functions
+
+```typescript
+import { formatDuration, humanFriendlyJoin, makeCodeblock } from "@utils/text";
+
+const duration = formatDuration(1, "days", false); // "1 day"
+const joined = humanFriendlyJoin(["apple", "banana", "cherry"]); // "apple, banana and cherry"
+const code = makeCodeblock("const x = 1;", "javascript");
+```
+
+---
+
+### Type Guards
+
+**USE**: `guards.ts` from `@utils/guards`
+
+**Available functions:**
+- `isTruthy<T>(item)` - Type guard for truthy values
+- `isNonNullish<T>(item)` - Type guard for non-null/undefined values
+
+**DO NOT**: Create custom type guards for these common cases
+
+```typescript
+import { isTruthy, isNonNullish } from "@utils/guards";
+
+const items = [1, 0, "", null, undefined, "test"];
+const truthy = items.filter(isTruthy); // [1, "test"]
+const nonNull = items.filter(isNonNullish); // [1, 0, "", "test"]
+```
+
+---
+
+### Miscellaneous Utilities
+
+**USE**: `misc.ts` from `@utils/misc`
+
+**Available functions:**
+- `classes(...classes)` - Join class names (filters falsy values)
+- `sleep(ms)` - Promise that resolves after delay
+- `isObject(obj)` - Check if value is a plain object (not array/null)
+- `isObjectEmpty(obj)` - Check if object has no own properties
+- `parseUrl(urlString)` - Parse URL safely (returns null on error)
+- `checkIntersecting(el)` - Check if element is on screen
+- `identity<T>(value)` - Identity function
+- `isPluginDev(id)` - Check if user is Vencord plugin dev
+- `shouldShowContributorBadge(id)` - Check if should show badge
+- `isEquicordPluginDev(id)` - Check if user is Equicord plugin dev
+- `shouldShowEquicordContributorBadge(id)` - Check if should show Equicord badge
+- `isAnyPluginDev(id)` - Check if user is any plugin dev
+- `pluralise(amount, singular, plural?)` - Pluralize words
+- `interpolateIfDefined(strings, ...args)` - Template literal that returns "" if any arg is null/undefined
+- `tryOrElse<T>(func, fallback)` - Try function, return fallback on error
+- `isEquicordGuild(id, isGuildId?)` - Check if channel/guild is Equicord guild
+- `isSupportChannel(channelId)` - Check if channel is support channel
+- `isEquicordSupport(userId)` - Check if user is Equicord support
+
+**DO NOT**: Recreate these common utility functions
+
+```typescript
+import { classes, sleep, isObject, parseUrl, pluralise } from "@utils/misc";
+
+const className = classes("base", condition && "active", "item"); // "base active item"
+await sleep(1000); // Wait 1 second
+if (isObject(value)) { /* ... */ }
+const url = parseUrl("https://example.com"); // URL | null
+const text = pluralise(5, "item"); // "5 items"
+```
+
+---
+
+### Patch Utilities
+
+**USE**: `patches.ts` from `@utils/patches`
+
+**Available functions:**
+- `canonicalizeMatch<T>(match)` - Canonicalize patch match (handles intl keys)
+- `canonicalizeReplace<T>(replace, pluginPath)` - Canonicalize replacement
+- `canonicalizeReplacement(replacement, pluginPath)` - Canonicalize full replacement
+- `canonicalizeFind(patch)` - Canonicalize patch find
+
+**DO NOT**: Manually handle intl key hashing in patches
+
+```typescript
+import { canonicalizeMatch, canonicalizeReplace } from "@utils/patches";
+
+// These are typically used internally by the patcher
+// But if you need to manually canonicalize:
+const match = canonicalizeMatch(/#{intl::MESSAGE_KEY}/);
+const replace = canonicalizeReplace("$self.something", "PluginName");
+```
+
+---
+
+### Queue
+
+**USE**: `Queue` class from `@utils/Queue`
+
+**DO NOT**: Create custom queue implementations for sequential tasks
+
+```typescript
+import { Queue } from "@utils/Queue";
+
+const queue = new Queue(10); // Max 10 items
+queue.push(async () => {
+    // Task 1
+});
+queue.push(async () => {
+    // Task 2 (runs after task 1)
+});
+queue.unshift(async () => {
+    // Task 0 (runs next, before task 1)
+});
+```
+
+---
+
+### ChangeList
+
+**USE**: `ChangeList<T>` class from `@utils/ChangeList`
+
+**DO NOT**: Create custom change tracking
+
+```typescript
+import { ChangeList } from "@utils/ChangeList";
+
+const changes = new ChangeList<string>();
+changes.handleChange("item1"); // Add
+changes.handleChange("item1"); // Remove (toggle)
+changes.add("item2");
+changes.remove("item2");
+const hasChanges = changes.hasChanges;
+const changeCount = changes.changeCount;
+```
+
+---
+
+### Merge Defaults
+
+**USE**: `mergeDefaults` from `@utils/mergeDefaults`
+
+**DO NOT**: Manually merge default values
+
+```typescript
+import { mergeDefaults } from "@utils/mergeDefaults";
+
+const config = { a: 1, b: { c: 2 } };
+const defaults = { a: 0, b: { c: 0, d: 3 } };
+mergeDefaults(config, defaults);
+// config is now { a: 1, b: { c: 2, d: 3 } }
+```
+
+---
+
+### Only Once
+
+**USE**: `onlyOnce` from `@utils/onlyOnce`
+
+**DO NOT**: Create custom "call once" wrappers
+
+```typescript
+import { onlyOnce } from "@utils/onlyOnce";
+
+const init = onlyOnce(() => {
+    console.log("Initialized");
+});
+init(); // "Initialized"
+init(); // (no output, returns cached result)
+```
+
+---
+
+### Native Utilities
+
+**USE**: `native.ts` from `@utils/native`
+
+**Available functions:**
+- `relaunch()` - Relaunch application
+- `showItemInFolder(path)` - Show file in folder (desktop only)
+
+**DO NOT**: Directly use DiscordNative/VesktopNative for these operations
+
+```typescript
+import { relaunch, showItemInFolder } from "@utils/native";
+
+relaunch(); // Restart app
+showItemInFolder("/path/to/file"); // Open in file manager
+```
+
+---
+
+### Web Utilities
+
+**USE**: `web.ts` from `@utils/web`
+
+**Available functions:**
+- `saveFile(file)` - Prompt user to save file
+- `chooseFile(mimeTypes)` - Prompt user to choose file
+- `getStylusWebStoreUrl()` - Get Stylus extension URL
+
+**DO NOT**: Create custom file save/choose dialogs
+
+```typescript
+import { saveFile, chooseFile } from "@utils/web";
+
+const file = new File(["content"], "file.txt");
+saveFile(file);
+
+const selectedFile = await chooseFile("image/*");
+```
+
+---
+
+### Web Metadata
+
+**USE**: `web-metadata.ts` from `@utils/web-metadata`
+
+**Available exports:**
+- `EXTENSION_VERSION` - Extension version string
+- `EXTENSION_BASE_URL` - Extension base URL
+- `RENDERER_CSS_URL` - Renderer CSS URL
+- `metaReady` - Promise that resolves when metadata is ready
+
+**DO NOT**: Access extension metadata directly
+
+```typescript
+import { EXTENSION_VERSION, metaReady } from "@utils/web-metadata";
+
+await metaReady;
+console.log(EXTENSION_VERSION);
+```
+
+---
+
+### Constants
+
+**USE**: `constants.ts` from `@utils/constants`
+
+**Available constants:**
+- `REACT_GLOBAL` - React global identifier
+- `SUPPORT_CHANNEL_ID`, `GUILD_ID` - Equicord IDs
+- `VC_SUPPORT_CHANNEL_ID`, `VC_GUILD_ID` - Vencord IDs
+- `IS_WINDOWS`, `IS_MAC`, `IS_LINUX`, `IS_MOBILE` - Platform checks
+- `Devs`, `EquicordDevs` - Developer objects
+- `VencordDevsById`, `EquicordDevsById` - Developer lookup maps
+
+**DO NOT**: Hardcode IDs or create platform detection
+
+```typescript
+import { GUILD_ID, IS_WINDOWS, Devs } from "@utils/constants";
+
+if (IS_WINDOWS) { /* ... */ }
+const dev = Devs.Ven;
+```
+
+---
+
+### Intl Hash
+
+**USE**: `intlHash.ts` from `@utils/intlHash`
+
+**Available functions:**
+- `runtimeHashMessageKey(key)` - Hash message key for Discord intl
+
+**DO NOT**: Manually hash intl keys
+
+```typescript
+import { runtimeHashMessageKey } from "@utils/intlHash";
+
+const hashed = runtimeHashMessageKey("MESSAGE_KEY");
+```
+
+---
+
+### Dependencies
+
+**USE**: `dependencies.ts` from `@utils/dependencies`
+
+**Available lazy loaders:**
+- `getStegCloak()` - Load StegCloak library
+- `getStylus()` - Load Stylus renderer
+- `getLess()` - Load Less compiler
+- `shikiWorkerSrc`, `shikiOnigasmSrc` - Shiki worker URLs
+
+**DO NOT**: Manually load these dependencies
+
+```typescript
+import { getStylus, getLess } from "@utils/dependencies";
+
+const stylus = await getStylus();
+const less = await getLess();
+```
+
+---
+
+### CSP Violations
+
+**USE**: `cspViolations.ts` from `@utils/cspViolations`
+
+**Available exports:**
+- `CspBlockedUrls` - Set of blocked URLs
+- `useCspErrors()` - React hook to track CSP errors
+
+**DO NOT**: Manually track CSP violations
+
+```typescript
+import { useCspErrors } from "@utils/cspViolations";
+
+function Component() {
+    const blockedUrls = useCspErrors();
+    // Component rerenders when CSP errors occur
+}
+```
+
+---
+
+### APNG
+
+**USE**: `apng.ts` from `@utils/apng`
+
+**Available functions:**
+- `parseAPNG(buffer)` - Parse animated PNG
+
+**DO NOT**: Create custom APNG parsers
+
+```typescript
+import { parseAPNG } from "@utils/apng";
+
+const animation = await parseAPNG(buffer);
+```
+
+---
+
+### Updater
+
+**USE**: `updater.ts` from `@utils/updater`
+
+**Available functions:**
+- `checkForUpdates()` - Check for updates
+- `update()` - Update application
+- `getRepo()` - Get repository info
+- `maybePromptToUpdate(confirmMessage, checkForDev?)` - Prompt user to update
+
+**DO NOT**: Create custom update mechanisms
+
+```typescript
+import { checkForUpdates, update, maybePromptToUpdate } from "@utils/updater";
+
+const isOutdated = await checkForUpdates();
+if (isOutdated) {
+    await update();
+}
+```
+
+---
+
+### Shared Utilities
+
+**USE**: `shared/` directory utilities
+
+**Available:**
+- `debounce<T>(func, delay?)` from `@utils` (re-exported from `shared/debounce`)
+- `onceDefined<T, P>(target, property, callback)` from `@utils` (re-exported from `shared/onceDefined`)
+
+```typescript
+import { debounce, onceDefined } from "@utils";
+
+const debounced = debounce(() => console.log("Hello"), 300);
+onceDefined(window, "webpackChunkdiscord_app", (wp) => {
+    // wp is now available
+});
+```
+
+---
+
+### Main Process Utilities
+
+**USE**: `src/main/utils/` for main process code
+
+**Available:**
+- `http.ts`: `checkedFetch`, `fetchJson`, `fetchBuffer`, `downloadToFile`
+- `externalLinks.ts`: `makeLinksOpenExternally`
+- `extensions.ts`: `installExt`
+- `constants.ts`: `DATA_DIR`, `SETTINGS_DIR`, `THEMES_DIR`, etc.
+- `crxToZip.ts`: `crxToZip`
+
+**DO NOT**: Use these in renderer process (they're main-only)
+
+---
+
+### Theme Utilities
+
+**USE**: `themes/` directory for theme-related utilities
+
+**Available:**
+- `themes/index.ts`: Theme header types
+- `themes/bd/index.ts`: BetterDiscord theme utilities
+- `themes/usercss/index.ts`: UserCSS utilities
+
+---
+
+## General Guidelines
+
+1. **Always check `@utils` first** before creating any utility function
+2. **Import from `@utils`** - All utilities are re-exported from `src/utils/index.ts`
+3. **Use type-safe utilities** - They provide proper TypeScript types
+4. **Follow existing patterns** - If a utility exists, use it consistently
+5. **Don't duplicate functionality** - Check if something similar exists before creating new code
+6. **Read utility source** - If unsure, read the source file to understand usage
+
+---
+
+## Common Mistakes to Avoid
+
+❌ **DON'T**: Create custom logging
+```typescript
+// BAD
+const log = (msg) => console.log(`[Plugin] ${msg}`);
+
+// GOOD
+import { Logger } from "@utils";
+const logger = new Logger("Plugin");
+logger.log(msg);
+```
+
+❌ **DON'T**: Use navigator.clipboard directly
+```typescript
+// BAD
+await navigator.clipboard.writeText(text);
+
+// GOOD
+import { copyToClipboard } from "@utils";
+await copyToClipboard(text);
+```
+
+❌ **DON'T**: Create custom class name utilities
+```typescript
+// BAD
+const classes = (...args) => args.filter(Boolean).join(" ");
+
+// GOOD
+import { classes } from "@utils/misc";
+const className = classes("a", "b", condition && "c");
+```
+
+❌ **DON'T**: Manually handle Discord operations
+```typescript
+// BAD
+FluxDispatcher.dispatch({ type: "MESSAGE_SEND", ... });
+
+// GOOD
+import { sendMessage } from "@utils/discord";
+await sendMessage(channelId, { content: "Hello" });
+```
+
+❌ **DON'T**: Create custom React hooks for common patterns
+```typescript
+// BAD
+const useAsync = (promise) => { /* custom implementation */ };
+
+// GOOD
+import { useAwaiter } from "@utils/react";
+const [data, error, pending] = useAwaiter(() => promise);
+```
+
+---
+
+## When to Create New Utilities
+
+Only create new utilities if:
+1. The functionality doesn't exist in `@utils`
+2. It's plugin-specific and not reusable
+3. It's a one-off helper that won't be reused
+4. You've confirmed no similar utility exists
+
+If you create a new utility, consider:
+- Is it reusable enough to be in `@utils`?
+- Does it follow existing patterns?
+- Is it properly typed?
+- Does it have proper error handling?
