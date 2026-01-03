@@ -4,10 +4,33 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
+import { Logger } from "@utils/Logger";
 import { MediaModalItem, openMediaModal } from "@utils/modal";
 
-import { log } from "../utils/logging";
 import type { GalleryItem } from "../utils/media";
+
+const logger = new Logger("ChannelGallery", "#8aadf4");
+
+// Performance tracking helpers
+const perfTimers = new Map<string, number>();
+const MAX_PERF_TIMERS = 100;
+
+function perfStart(name: string): void {
+    // Clean up old timers if map gets too large
+    if (perfTimers.size >= MAX_PERF_TIMERS) {
+        const firstKey = perfTimers.keys().next().value;
+        if (firstKey) perfTimers.delete(firstKey);
+    }
+    perfTimers.set(name, performance.now());
+}
+
+function perfEnd(name: string): void {
+    const start = perfTimers.get(name);
+    if (start === undefined) return;
+    perfTimers.delete(name);
+    const duration = performance.now() - start;
+    logger.debug(`[perf] ${name} (${duration.toFixed(2)} ms)`);
+}
 
 // Helper to convert GalleryItem to MediaModalItem
 function itemToMediaItem(item: GalleryItem): MediaModalItem {
@@ -65,15 +88,15 @@ export function openFullscreenView(
     onClose: (newStableId: string | null) => void
 ): void {
     if (isFullscreenOpen) {
-        log.warn("lifecycle", "Fullscreen view already open, ignoring");
+        logger.warn("[lifecycle] Fullscreen view already open, ignoring");
         return;
     }
     if (!items || items.length === 0) {
-        log.warn("lifecycle", "No items for fullscreen view");
+        logger.warn("[lifecycle] No items for fullscreen view");
         return;
     }
 
-    log.info("lifecycle", "Opening fullscreen view", { selectedStableId, itemCount: items.length });
+    logger.info("[lifecycle] Opening fullscreen view", { selectedStableId, itemCount: items.length });
     isFullscreenOpen = true;
 
     const selectedIndex = items.findIndex(item => item && item.stableId === selectedStableId);
@@ -82,14 +105,14 @@ export function openFullscreenView(
     // Preload adjacent images
     preloadAdjacentImages(items, validIndex, 2);
 
-    log.perfStart("fullscreen-build");
+    perfStart("fullscreen-build");
     const mediaItems: MediaModalItem[] = items
         .filter((item): item is GalleryItem => Boolean(item))
         .map(itemToMediaItem);
-    log.perfEnd("fullscreen-build");
+    perfEnd("fullscreen-build");
 
     if (mediaItems.length === 0) {
-        log.warn("lifecycle", "No media items for fullscreen view");
+        logger.warn("[lifecycle] No media items for fullscreen view");
         isFullscreenOpen = false;
         return;
     }
@@ -106,7 +129,7 @@ export function openFullscreenView(
         const currentItem = items[currentIndex];
         const newStableId = currentItem?.stableId ?? null;
 
-        log.info("lifecycle", "Fullscreen view closed", { newStableId, currentIndex });
+        logger.info("[lifecycle] Fullscreen view closed", { newStableId, currentIndex });
         onClose(newStableId);
     };
 
@@ -119,7 +142,7 @@ export function openFullscreenView(
         onCloseCallback: handleClose,
         onIndexChange: (index: number) => {
             currentIndex = index;
-            log.debug("lifecycle", "Fullscreen modal index changed", { index });
+            logger.debug("[lifecycle] Fullscreen modal index changed", { index });
             // Preload more images in background
             preloadAdjacentImages(items, index, 3);
         }

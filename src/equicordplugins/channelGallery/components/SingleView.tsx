@@ -4,12 +4,14 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
+import { Logger } from "@utils/Logger";
 import { findByPropsLazy } from "@webpack";
 import { useCallback, useEffect, useMemo, useState } from "@webpack/common";
 import type { MouseEvent } from "react";
 
-import { log } from "../utils/logging";
 import type { GalleryItem } from "../utils/media";
+
+const logger = new Logger("ChannelGallery", "#8aadf4");
 
 const jumper: any = findByPropsLazy("jumpToMessage");
 
@@ -25,13 +27,13 @@ export function SingleView(props: {
     items: GalleryItem[];
     selectedStableId: string;
     channelId: string;
-    cache: { failedIds: Set<string>; };
+    failedIds: Set<string>;
     onClose(): void;
     onChange(stableId: string): void;
     onOpenMessage(): void;
     onMarkFailed(stableId: string): void;
 }) {
-    const { items, selectedStableId, channelId, cache, onClose, onChange, onOpenMessage, onMarkFailed } = props;
+    const { items, selectedStableId, channelId, failedIds, onClose, onChange, onOpenMessage, onMarkFailed } = props;
     const [videoFailed, setVideoFailed] = useState(false);
     const [imageFailed, setImageFailed] = useState(false);
 
@@ -42,19 +44,16 @@ export function SingleView(props: {
 
     useEffect(() => {
         // Assert selectedIndex validity in debug builds
-        log.assert(
-            selectedIndex >= 0 && selectedIndex < items.length,
-            "lifecycle",
-            "Selected index out of bounds in SingleView",
-            { selectedIndex, itemsLength: items.length }
-        );
+        if (!(selectedIndex >= 0 && selectedIndex < items.length)) {
+            logger.error("[lifecycle] ASSERT: Selected index out of bounds in SingleView", { selectedIndex, itemsLength: items.length });
+        }
     }, [selectedIndex, items.length]);
 
     // Auto-advance to next valid image if current one fails or is invalid
     useEffect(() => {
         if (selectedIndex < 0 || selectedIndex >= items.length) {
             // Find next valid item
-            const nextValid = items.find(item => item && item.stableId && !cache.failedIds.has(item.stableId));
+            const nextValid = items.find(item => item && item.stableId && !failedIds.has(item.stableId));
             if (nextValid && nextValid.stableId !== selectedStableId) {
                 onChange(nextValid.stableId);
             } else if (!nextValid) {
@@ -64,14 +63,14 @@ export function SingleView(props: {
         }
 
         const item = items[selectedIndex];
-        if (!item || !item.url || cache.failedIds.has(item.stableId)) {
+        if (!item || !item.url || failedIds.has(item.stableId)) {
             // Current item is invalid, find next valid
-            const nextValid = items.find((it, idx) => idx > selectedIndex && it && it.stableId && !cache.failedIds.has(it.stableId));
+            const nextValid = items.find((it, idx) => idx > selectedIndex && it && it.stableId && !failedIds.has(it.stableId));
             if (nextValid && nextValid.stableId !== selectedStableId) {
                 onChange(nextValid.stableId);
             } else {
                 // Try previous
-                const prevValid = items.slice(0, selectedIndex).reverse().find(it => it && it.stableId && !cache.failedIds.has(it.stableId));
+                const prevValid = items.slice(0, selectedIndex).reverse().find(it => it && it.stableId && !failedIds.has(it.stableId));
                 if (prevValid && prevValid.stableId !== selectedStableId) {
                     onChange(prevValid.stableId);
                 } else if (!prevValid && !nextValid) {
@@ -79,23 +78,23 @@ export function SingleView(props: {
                 }
             }
         }
-    }, [selectedIndex, items, selectedStableId, cache.failedIds, onChange, onClose]);
+    }, [selectedIndex, items, selectedStableId, failedIds, onChange, onClose]);
 
     // Log when selection changes for debugging/navigation tracing
     useEffect(() => {
-        log.info("lifecycle", "SingleView selection changed", { selectedStableId, selectedIndex });
+        logger.info("[lifecycle] SingleView selection changed", { selectedStableId, selectedIndex });
     }, [selectedStableId, selectedIndex]);
 
     if (selectedIndex < 0 || selectedIndex >= items.length) return null;
 
     const item = items[selectedIndex];
-    if (!item || !item.url || cache.failedIds.has(item.stableId)) return null;
+    if (!item || !item.url || failedIds.has(item.stableId)) return null;
 
     // Find next/prev valid items (skip failed ones)
     const findNextValid = (startIndex: number, direction: 1 | -1): GalleryItem | null => {
         for (let i = startIndex + direction; i >= 0 && i < items.length; i += direction) {
             const it = items[i];
-            if (it && it.stableId && it.url && !cache.failedIds.has(it.stableId)) {
+            if (it && it.stableId && it.url && !failedIds.has(it.stableId)) {
                 return it;
             }
         }
@@ -111,7 +110,7 @@ export function SingleView(props: {
 
     const handleJump = useCallback(() => {
         if (!item || !item.messageId) return;
-        log.info("lifecycle", "Jump to message from SingleView (Enter key)", { messageId: item.messageId });
+        logger.info("[lifecycle] Jump to message from SingleView (Enter key)", { messageId: item.messageId });
         try {
             jumper.jumpToMessage({
                 channelId,
@@ -120,7 +119,7 @@ export function SingleView(props: {
                 jumpType: "INSTANT"
             });
         } catch (e: unknown) {
-            log.error("lifecycle", "Failed to jump to message from SingleView", e);
+            logger.error("[lifecycle] Failed to jump to message from SingleView", e);
         } finally {
             // Close the entire modal, not just go back to grid
             onOpenMessage();
@@ -132,7 +131,7 @@ export function SingleView(props: {
         const onKeyDown = (e: KeyboardEvent) => {
             if (e.key === "Escape") {
                 e.preventDefault();
-                log.debug("lifecycle", "Escape pressed in SingleView - returning to gallery");
+                logger.debug("[lifecycle] Escape pressed in SingleView - returning to gallery");
                 onClose();
             } else if (e.key === "ArrowLeft" && hasPrev && prevStableId) {
                 e.preventDefault();
@@ -166,7 +165,7 @@ export function SingleView(props: {
         e.preventDefault();
         e.stopPropagation();
         if (hasPrev && prevStableId) {
-            log.debug("lifecycle", "Navigate prev in SingleView", { prevStableId });
+            logger.debug("[lifecycle] Navigate prev in SingleView", { prevStableId });
             onChange(prevStableId);
         }
     };
@@ -175,7 +174,7 @@ export function SingleView(props: {
         e.preventDefault();
         e.stopPropagation();
         if (hasNext && nextStableId) {
-            log.debug("lifecycle", "Navigate next in SingleView", { nextStableId });
+            logger.debug("[lifecycle] Navigate next in SingleView", { nextStableId });
             onChange(nextStableId);
         }
     };
@@ -186,7 +185,7 @@ export function SingleView(props: {
         } else {
             setImageFailed(true);
         }
-        log.warn("data", "Media failed in SingleView", { stableId: item.stableId, isVideo });
+        logger.warn("[data] Media failed in SingleView", { stableId: item.stableId, isVideo });
         onMarkFailed(item.stableId);
         // Auto-advance to next valid image
         if (nextStableId) {
@@ -262,7 +261,7 @@ export function SingleView(props: {
                         autoPlay
                         loop={isAnimated}
                         onError={() => handleMediaError(true)}
-                        onLoadedData={() => log.debug("render", "Video loaded in SingleView", { stableId: item.stableId })}
+                        onLoadedData={() => logger.debug("[render] Video loaded in SingleView", { stableId: item.stableId })}
                     />
                 ) : (
                     <img
@@ -270,7 +269,7 @@ export function SingleView(props: {
                         alt={item.filename ?? "Image"}
                         className="vc-gallery-lightbox-image"
                         onError={() => handleMediaError(false)}
-                        onLoad={() => log.debug("render", "Image loaded in SingleView", { stableId: item.stableId })}
+                        onLoad={() => logger.debug("[render] Image loaded in SingleView", { stableId: item.stableId })}
                     />
                 )}
             </div>

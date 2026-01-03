@@ -4,10 +4,11 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
+import { Logger } from "@utils/Logger";
 import { findComponentByCodeLazy } from "@webpack";
 import { React } from "@webpack/common";
 
-import { log } from "./logging";
+const logger = new Logger("ChannelGallery", "#8aadf4");
 
 const IMAGE_EXTS = new Set(["png", "jpg", "jpeg", "gif", "webp", "avif"]);
 const VIDEO_EXTS = new Set(["mp4", "webm", "mov", "m4v"]);
@@ -125,6 +126,8 @@ export type GalleryItem = {
     height?: number;
     filename?: string;
     authorId?: string;
+    authorUsername?: string;
+    authorGlobalName?: string;
     timestamp?: string;
     isAnimated?: boolean;
     isVideo?: boolean;
@@ -140,7 +143,7 @@ export function extractImages(
 ): GalleryItem[] {
     if (!messages || !Array.isArray(messages)) return [];
 
-    log.debug("data", "Extracting images from messages", { count: messages.length, channelId, includeEmbeds: opts.includeEmbeds });
+    logger.debug("[data] Extracting images from messages", { count: messages.length, channelId, includeEmbeds: opts.includeEmbeds });
 
     const items: GalleryItem[] = [];
 
@@ -150,11 +153,16 @@ export function extractImages(
         if (!messageId) continue;
 
         const authorId = m.author && m.author.id ? String(m.author.id) : undefined;
+        const authorUsername = m.author && m.author.username ? String(m.author.username) : undefined;
+        const authorGlobalName = m.author && (m.author.global_name || (m.author as any).globalName) ?
+            String(m.author.global_name ?? (m.author as any).globalName) : undefined;
         const timestamp = m.timestamp ? String(m.timestamp) : undefined;
         const base = {
             channelId,
             messageId,
             authorId,
+            authorUsername,
+            authorGlobalName,
             timestamp
         };
 
@@ -207,7 +215,7 @@ export function extractImages(
                 try {
                     embeds = JSON.parse(embeds);
                 } catch {
-                    log.debug("data", "Failed to parse embeds JSON", { messageId, embeds: embeds });
+                    logger.debug("[data] Failed to parse embeds JSON", { messageId, embeds: embeds });
                     continue;
                 }
             }

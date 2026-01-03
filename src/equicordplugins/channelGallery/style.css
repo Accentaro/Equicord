@@ -100,35 +100,31 @@
 }
 
 /* ============================================================
- * Tabbar styles
+ * Filter controls
  * ============================================================ */
-.vc-gallery-tabbar {
-    flex-shrink: 0;
-    margin: 0;
-    padding: 5px 16px 0;
+.vc-gallery-controls {
     display: flex;
-    justify-content: center;
-    gap: 10px;
+    flex-direction: column;
+    gap: 8px;
+    padding: 8px 14px 4px;
+    background: var(--background-primary);
+    flex-shrink: 0;
 }
 
-.vc-gallery-tab {
-    position: relative;
-    font-weight: 600;
-    text-transform: none;
-    text-align: center;
-    margin: 0 !important;
-    padding: 0 4px 10px;
-    cursor: pointer;
-    opacity: 0.8;
-    transition:
-        color 120ms ease,
-        opacity 120ms ease,
-        transform 120ms ease !important;
+.vc-gallery-control-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: flex-end;
 }
 
-.vc-gallery-tab:hover {
-    opacity: 1;
-    transform: translateY(-1px);
+.vc-gallery-control {
+    min-width: 140px;
+    flex: 0 1 200px;
+}
+
+.vc-gallery-control-grow {
+    flex: 1 1 260px;
 }
 
 /* ============================================================
