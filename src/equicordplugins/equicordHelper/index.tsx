@@ -19,12 +19,6 @@ import { PluginCards } from "./pluginCards";
 let clicked = false;
 
 const settings = definePluginSettings({
-    disableDMContextMenu: {
-        type: OptionType.BOOLEAN,
-        description: "Disables the DM list context menu in favor of the x button",
-        restartNeeded: true,
-        default: false
-    },
     noMirroredCamera: {
         type: OptionType.BOOLEAN,
         description: "Prevents the camera from being mirrored on your screen",
@@ -53,13 +47,19 @@ const settings = definePluginSettings({
         type: OptionType.BOOLEAN,
         description: "Refreshes Slash Commands to show newly added commands without restarting your client.",
         default: false,
+    },
+    forceRoleIcon: {
+        type: OptionType.BOOLEAN,
+        description: "Forces role icons to display next to messages in compact mode",
+        restartNeeded: true,
+        default: false
     }
 });
 
 export default definePlugin({
     name: "EquicordHelper",
     description: "Used to provide support, fix discord caused crashes, and other misc features.",
-    authors: [Devs.thororen, EquicordDevs.nyx, EquicordDevs.Naibuu, EquicordDevs.keyages, EquicordDevs.SerStars],
+    authors: [Devs.thororen, EquicordDevs.nyx, EquicordDevs.Naibuu, EquicordDevs.keyages, EquicordDevs.SerStars, EquicordDevs.mart],
     required: true,
     settings,
     patches: [
@@ -76,16 +76,6 @@ export default definePlugin({
                     replace: "return $1;"
                 }
             ]
-        },
-        // Remove DM Context Menu
-        {
-            find: "#{intl::DM_OPTIONS}",
-            predicate: () => settings.store.disableDMContextMenu,
-
-            replacement: {
-                match: /\{dotsInsteadOfCloseButton:(\i),rearrangeContextMenu:(\i).*?autoTrackExposure:!0\}\)/,
-                replace: "$1=false,$2=false"
-            },
         },
         // When focused on voice channel or group chat voice call
         {
@@ -154,6 +144,15 @@ export default definePlugin({
                 },
             ]
         })),
+        // Force Role Icon
+        {
+            find: "Message Username",
+            predicate: () => settings.store.forceRoleIcon,
+            replacement: {
+                match: /(?<=\.badgesContainer.{0,150}\?2:)0(?=\})/,
+                replace: "1"
+            }
+        },
     ],
     renderMessageAccessory(props) {
         return (
