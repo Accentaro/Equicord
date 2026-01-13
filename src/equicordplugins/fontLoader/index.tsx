@@ -15,7 +15,7 @@ import { EquicordDevs } from "@utils/constants";
 import { Margins } from "@utils/margins";
 import { classes } from "@utils/misc";
 import definePlugin, { OptionType } from "@utils/types";
-import { React, TextInput } from "@webpack/common";
+import { React, TextInput, Select } from "@webpack/common";
 
 interface GoogleFontMetadata {
     family: string;
@@ -73,6 +73,62 @@ async function searchGoogleFonts(query: string) {
 const preloadFont = (family: string) =>
     loadFontStyle(createGoogleFontUrl(family, "&text=The quick brown fox jumps over the lazy dog"));
 
+// Cache for fonts - populated on plugin load
+let cachedFonts: GoogleFontMetadata[] | null = null;
+let fontsPromise: Promise<GoogleFontMetadata[]> | null = null;
+
+async function fetchAllGoogleFonts(): Promise<GoogleFontMetadata[]> {
+    // Return cached fonts if available
+    if (cachedFonts !== null) {
+        return cachedFonts;
+    }
+    
+    // If already fetching, return the existing promise
+    if (fontsPromise !== null) {
+        return fontsPromise;
+    }
+    
+    // Use Grida Fonts API (public, no auth, provides all Google Fonts)
+    fontsPromise = (async () => {
+        try {
+            const gridaResponse = await fetch("https://fonts.grida.co/webfonts.json");
+            if (gridaResponse.ok) {
+                const gridaData = await gridaResponse.json();
+                if (gridaData?.items && Array.isArray(gridaData.items)) {
+                    // Filter out fonts that might cause errors - validate font names
+                    const validFonts = gridaData.items
+                        .filter((font: any) => {
+                            if (!font.family) return false;
+                            const name = font.family;
+                            if (!name || name.length === 0 || name.length > 100) return false;
+                            // Allow letters, numbers, spaces, hyphens, underscores, and apostrophes
+                            if (!/^[a-zA-Z0-9\s\-_']+$/.test(name)) return false;
+                            return true;
+                        })
+                        .map((font: any) => ({
+                            family: font.family,
+                            displayName: font.family,
+                            authors: [],
+                            category: 0,
+                            popularity: 0,
+                            variants: []
+                        }));
+                    
+                    cachedFonts = validFonts;
+                    return validFonts;
+                }
+            }
+        } catch (err) {
+            console.error("Failed to fetch fonts from Grida:", err);
+        }
+        
+        cachedFonts = [];
+        return [];
+    })();
+    
+    return fontsPromise;
+}
+
 let styleElement: HTMLStyleElement | null = null;
 
 const applyFont = async (fontFamily: string) => {
@@ -102,70 +158,68 @@ const applyFont = async (fontFamily: string) => {
     }
 };
 
-function GoogleFontSearch({ onSelect }: { onSelect: (font: GoogleFontMetadata) => void; }) {
-    const [query, setQuery] = React.useState("");
-    const [results, setResults] = React.useState<GoogleFontMetadata[]>([]);
-    const [loading, setLoading] = React.useState(false);
-    const previewStyles = React.useRef<HTMLStyleElement[]>([]);
+function GoogleFontSelect({ onSelect }: { onSelect: (font: GoogleFontMetadata) => void; }) {
+    const [fonts] = React.useState<GoogleFontMetadata[]>(cachedFonts || []);
+    const [selectedFont, setSelectedFont] = React.useState<string | null>(null);
+    const loadedFonts = React.useRef(new Set<string>());
 
-    React.useEffect(() => () => {
-        previewStyles.current.forEach(style => style.remove());
-    }, []);
+    const options = fonts.map(font => ({
+        label: font.displayName,
+        value: font.family,
+        key: font.family
+    }));
 
-    const debouncedSearch = debounce(async (value: string) => {
-        setLoading(true);
-        if (!value) {
-            setResults([]);
-            setLoading(false);
-            return;
+    const handleSelect = (fontFamily: string) => {
+        setSelectedFont(fontFamily);
+        const font = fonts.find(f => f.family === fontFamily);
+        if (font) {
+            onSelect(font);
         }
-
-        const fonts = await searchGoogleFonts(value);
-        previewStyles.current.forEach(style => style.remove());
-        previewStyles.current = await Promise.all(fonts.map(f => preloadFont(f.family)));
-        setResults(fonts);
-        setLoading(false);
-    }, 300);
-
-    const handleSearch = (e: string) => {
-        setQuery(e);
-        debouncedSearch(e);
     };
+
+    const renderOptionLabel = React.useCallback((option: { label: string; value: string }) => {
+        // Lazy load font CSS when it's rendered in the dropdown
+        if (!loadedFonts.current.has(option.value)) {
+            const url = createGoogleFontUrl(option.value);
+            // Check if already loaded
+            const existingLink = document.querySelector(`link[href="${url}"]`);
+            if (!existingLink) {
+                const link = document.createElement("link");
+                link.rel = "stylesheet";
+                link.href = url;
+                link.onerror = () => {
+                    // Silently fail - remove the link on error and mark as failed
+                    try { link.remove(); } catch {}
+                    loadedFonts.current.add(option.value); // Mark as attempted to avoid retries
+                };
+                document.head.appendChild(link);
+            }
+            loadedFonts.current.add(option.value);
+        }
+        
+        return (
+            <span style={{ fontFamily: `"${option.value}", sans-serif` }}>
+                {option.label}
+            </span>
+        );
+    }, []);
 
     return (
         <section>
-            <HeadingSecondary>Search Google Fonts</HeadingSecondary>
-            <Paragraph>Click on any font to apply it.</Paragraph>
-
-            <TextInput
-                value={query}
-                onChange={e => handleSearch(e)}
-                placeholder="Search fonts..."
-                disabled={loading}
-                className={Margins.bottom16}
-            />
-
-            {results.length > 0 && (
-                <div className={classes(Margins.top8, "eq-googlefonts-results")}>
-                    {results.map(font => (
-                        <Card
-                            key={font.family}
-                            className={classes("eq-googlefonts-card", Margins.bottom8)}
-                            onClick={() => onSelect(font)}
-                        >
-                            <div className="eq-googlefonts-preview" style={{ fontFamily: font.family }}>
-                                <HeadingTertiary>{font.displayName}</HeadingTertiary>
-                                <Paragraph>The quick brown fox jumps over the lazy dog</Paragraph>
-                            </div>
-                            {font.authors?.length && (
-                                <Paragraph className={Margins.top8} style={{ opacity: 0.7 }}>
-                                    by {font.authors.join(", ")}
-                                </Paragraph>
-                            )}
-                        </Card>
-                    ))}
-                </div>
-            )}
+            <HeadingSecondary>Select Google Font</HeadingSecondary>
+            <Paragraph>Choose a font from the dropdown below.</Paragraph>
+            <div className={Margins.top16}>
+                <Select
+                    placeholder="Select a font..."
+                    options={options}
+                    maxVisibleItems={10}
+                    closeOnSelect={true}
+                    select={handleSelect}
+                    isSelected={v => v === selectedFont}
+                    serialize={v => String(v)}
+                    renderOptionLabel={renderOptionLabel}
+                />
+            </div>
         </section>
     );
 }
@@ -180,9 +234,9 @@ const settings = definePluginSettings({
     },
     fontSearch: {
         type: OptionType.COMPONENT,
-        description: "Search and select Google Fonts",
+        description: "Select Google Fonts",
         component: () => (
-            <GoogleFontSearch
+            <GoogleFontSelect
                 onSelect={font => {
                     settings.store.selectedFont = font.family;
                     applyFont(font.family);
@@ -200,10 +254,13 @@ const settings = definePluginSettings({
 export default definePlugin({
     name: "FontLoader",
     description: "Loads any font from Google Fonts",
-    authors: [EquicordDevs.vmohammad],
+    authors: [EquicordDevs.vmohammad, EquicordDevs.benjii],
     settings,
 
     async start() {
+        // Fetch and cache fonts on plugin load
+        await fetchAllGoogleFonts();
+        
         const savedFont = settings.store.selectedFont;
         if (savedFont) {
             await applyFont(savedFont);
