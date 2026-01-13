@@ -321,8 +321,9 @@ function MessageContextMenu(children: Array<any>, props: any) {
         );
 
         const filename = attachment?.filename || attachment?.title || mediaItem?.filename || mediaItem?.name || "";
-        const contentType = (attachment?.content_type || mediaItem?.contentType || "").toLowerCase();
-        const looksLikeZip = contentType.includes("zip") || filename.toLowerCase().endsWith(".zip") || (mediaItem?.url || "").toLowerCase().endsWith(".zip");
+        const contentType = attachment?.content_type || mediaItem?.contentType || "";
+        const url = mediaItem?.url || attachment?.url || attachment?.proxy_url || "";
+        const looksLikeZip = isZipAttachment(filename, contentType, url);
         if (!looksLikeZip) return;
 
         children.push(
@@ -377,16 +378,40 @@ function MessageContextMenu(children: Array<any>, props: any) {
 const expandedState = new Map<string, boolean>();
 const blobCache = new Map<string, Blob>();
 
+function isZipAttachment(filename?: string, contentType?: string, url?: string): boolean {
+    const name = (filename || "").toLowerCase();
+    const type = (contentType || "").toLowerCase();
+    const cleanUrl = (url || "").split("?")[0].toLowerCase();
+    return type.includes("zip") || name.endsWith(".zip") || cleanUrl.endsWith(".zip");
+}
+
+function getAttachmentKey(attachment: any): string {
+    return (
+        attachment?.id ||
+        attachment?.filename ||
+        attachment?.name ||
+        attachment?.url ||
+        attachment?.proxy_url ||
+        "unknown"
+    );
+}
+
 // Component to render inside each zip attachment
 function ZipAttachmentPreview({ attachment }: { attachment: any; }) {
-    const [blob, setBlob] = useState<Blob | null>(() => blobCache.get(attachment.id) || null);
+    const filename = attachment?.filename || attachment?.name || "";
+    const contentType = attachment?.content_type || "";
+    const url = attachment?.url || attachment?.proxy_url || "";
+    const looksLikeZip = isZipAttachment(filename, contentType, url);
+    const attachmentKey = getAttachmentKey(attachment);
+    const [blob, setBlob] = useState<Blob | null>(() => blobCache.get(attachmentKey) || null);
     const [error, setError] = useState<string | null>(null);
     const [expanded, setExpanded] = useState<boolean>(() => {
-        try { return expandedState.get(attachment.id) ?? false; } catch { return false; }
+        try { return expandedState.get(attachmentKey) ?? false; } catch { return false; }
     });
 
     useEffect(() => {
-        if (blobCache.has(attachment.id)) return;
+        if (!looksLikeZip) return;
+        if (blobCache.has(attachmentKey)) return;
 
         let mounted = true;
         (async () => {
@@ -422,7 +447,7 @@ function ZipAttachmentPreview({ attachment }: { attachment: any; }) {
 
                 if (mounted) {
                     setBlob(b);
-                    blobCache.set(attachment.id, b);
+                    blobCache.set(attachmentKey, b);
                 }
             } catch (err) {
                 console.error("ZIP+: fetch error", err);
@@ -430,8 +455,9 @@ function ZipAttachmentPreview({ attachment }: { attachment: any; }) {
             }
         })();
         return () => { mounted = false; };
-    }, [attachment.id]);
+    }, [attachmentKey]);
 
+    if (!looksLikeZip) return null;
     if (error) return <div className="zp-error">{error}</div>;
     if (!blob) return <div className="zp-loading">Loading preview…</div>;
 
@@ -441,7 +467,7 @@ function ZipAttachmentPreview({ attachment }: { attachment: any; }) {
                 blob={blob}
                 name={attachment.filename || attachment.name || "archive.zip"}
                 expanded={expanded}
-                onExpandedChange={v => { setExpanded(v); expandedState.set(attachment.id, v); }}
+                onExpandedChange={v => { setExpanded(v); expandedState.set(attachmentKey, v); }}
             />
         </div>
     );
