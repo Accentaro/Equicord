@@ -4,13 +4,25 @@
 [![Tests](https://github.com/Equicord/Equicord/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/Equicord/Equicord/actions/workflows/test.yml)
 [![Discord](https://img.shields.io/discord/1173279886065029291.svg?color=768AD4&label=Discord&logo=discord&logoColor=white)](https://equicord.org/discord)
 
-Equicord is a fork of [Vencord](https://github.com/Vendicated/Vencord), with over 300+ plugins.
+This is a forked version of [Equicord](https://github.com/Equicord/Equicord), with over 300+ plugins and additional custom plugins and improvements.
 
-You can join our [Discord server](https://equicord.org/discord) for commits, changes, chatting, or even support.
+### Additional Plugins & Features
+
+This fork includes additional plugins either developed or changed by myself, not found in the original Equicord:
+
+- **ZIP+** - Combined autozipper functionality with zip preview tool for enhanced file management
+- **GifCaptioner** - Add captions to GIFs.
+- **ChannelGallery** - Enhanced channel gallery viewing experience.
+- **StreamEnhancements** - Additional streaming options for FPS & Resolution (Works for previewscreen also)
+- **FontLoader** - Improved font preloading and rendering in dropdown lists
+- **GameActivityToggle** - Enhanced game activity toggle with improved Colour Scheme
+- **MicLoopbackTester** - Enhanced color scheme for better usability
+
+You can join the original Equicord [Discord server](https://equicord.org/discord) for commits, changes, chatting, or even support.
 
 ### Included Plugins
 
-Our included plugins can be found [here](https://equicord.org/plugins).
+The full list of included plugins can be found [here](https://equicord.org/plugins).
 
 ## Installing / Uninstalling
 
