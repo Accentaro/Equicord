@@ -14,7 +14,15 @@ export interface CaptionTransform {
 	type: "caption";
 }
 
-export type GifTransform = CaptionTransform;
+export interface SpeechBubbleTransform {
+	type: "speechbubble";
+	tipX: number;
+	tipY: number;
+	tipBase: number;
+	enabled: boolean;
+}
+
+export type GifTransform = CaptionTransform | SpeechBubbleTransform;
 export type OnSubmit = (callback: () => GifTransform) => void;
 
 let worker = getUrl(GifWorker);
@@ -94,7 +102,7 @@ export default class GifRenderer {
 			this.needsDisposal = false;
 		}
 
-		if(source.disposalType == 2) this.needsDisposal = true;
+		if(source.disposalType === 2) this.needsDisposal = true;
 
 		if(
 			!this.frameImageData ||

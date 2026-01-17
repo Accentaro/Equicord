@@ -2,9 +2,8 @@ import { Button } from "@components/Button";
 import { React, useCallback, useMemo, useState } from "@webpack/common";
 import { ModalCloseButton, ModalContent, ModalFooter, ModalHeader, ModalProps as VencordModalProps, ModalRoot, ModalSize } from "@utils/modal";
 import { BaseText } from "@components/BaseText";
-import type { OnSubmit } from "../render/gifRenderer";
+import type { GifTransform, OnSubmit } from "../render/gifRenderer";
 import Captioner from "./captioner";
-import type { GifTransform } from "../render/gifRenderer";
 import { clearStatus, showCreating } from "./statusCard";
 
 interface ModalProps extends VencordModalProps {

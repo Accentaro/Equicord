@@ -64,7 +64,7 @@
 .gc-caption {
     background-color: var(--input-background, var(--background-accent));
     color: var(--text-normal, white);
-    border: 1px solid var(--input-border, rgba(255, 255, 255, 0.1));
+    border: 1px solid var(--input-border, rgb(255 255 255 / 10%));
     border-radius: 8px;
     padding: 10px;
     width: 100%;
@@ -75,7 +75,7 @@
 }
 
 .gc-caption:focus {
-    border-color: var(--input-border-hover, rgba(255, 255, 255, 0.2));
+    border-color: var(--input-border-hover, rgb(255 255 255 / 20%));
     outline: none;
 }
 
@@ -119,7 +119,7 @@
 }
 
 .gc-modal-title {
-    color: var(--text-strong, #ffffff);
+    color: var(--text-strong, #fff);
     margin: 0;
     flex-grow: 1;
 }
@@ -143,7 +143,6 @@
 .gc-range input[type="range"] {
     flex-grow: 1;
     height: 4px;
-    -webkit-appearance: none;
     appearance: none;
     background: var(--background-modifier-accent, #4f545c);
     border-radius: 2px;
@@ -151,12 +150,11 @@
 }
 
 .gc-range input[type="range"]::-webkit-slider-thumb {
-    -webkit-appearance: none;
     appearance: none;
     width: 12px;
     height: 12px;
     border-radius: 50%;
-    background: var(--interactive-active, #ffffff);
+    background: var(--interactive-active, #fff);
     cursor: pointer;
 }
 
@@ -164,7 +162,7 @@
     width: 12px;
     height: 12px;
     border-radius: 50%;
-    background: var(--interactive-active, #ffffff);
+    background: var(--interactive-active, #fff);
     cursor: pointer;
     border: none;
 }
@@ -224,7 +222,7 @@
 .gc-status-icon-svg {
     width: 100%;
     height: 100%;
-    fill: currentColor;
+    fill: currentcolor;
     opacity: 0.9;
 }
 

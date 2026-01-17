@@ -1,4 +1,4 @@
-import { decompressFrames, parseGIF, type ParsedFrame } from "gifuct-js";
+import { decompressFrames, parseGIF } from "gifuct-js";
 import GifRenderer, { type GifTransform } from "./gifRenderer";
 import { showError } from "../ui/statusCard";
 
@@ -14,8 +14,9 @@ export default async function captionGif(url: string, width: number, height: num
     const frames = decompressFrames(parsed, true);
 
     const renderer = new GifRenderer({ width, height, transform, frames: frames.length });
-    let frame: ParsedFrame | undefined;
-    while (frame = frames.shift()) {
+    while (frames.length > 0) {
+        const frame = frames.shift();
+        if (!frame) break;
         renderer.addGifFrame(frame, parsed);
         await new Promise((res) => setTimeout(res));
     }

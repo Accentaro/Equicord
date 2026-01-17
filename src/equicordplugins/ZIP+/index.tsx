@@ -237,7 +237,7 @@ async function fetchBlob(url: string): Promise<Blob | null> {
     if (Native?.fetchAttachment) {
         try {
             const buffer = await Native.fetchAttachment(url);
-            if (buffer?.length > 0) {
+            if (buffer instanceof Uint8Array && buffer.length > 0) {
                 const arrayBuffer = new ArrayBuffer(buffer.length);
                 new Uint8Array(arrayBuffer).set(buffer);
                 return new Blob([arrayBuffer]);

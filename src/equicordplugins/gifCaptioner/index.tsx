@@ -3,20 +3,22 @@
  * Copyright (c) 2025 Vendicated and contributors
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
+
 // Credits: https://github.com/TheLazySquid
 // Ported from https://github.com/TheLazySquid/BetterDiscordPlugins/blob/51dc41a193c1cf3ac6c28916f2dcef81fe073417/plugins/GifCaptioner/GifCaptioner.plugin.js
 
-import { EquicordDevs } from "@utils/constants";
-import definePlugin from "@utils/types";
-import { ExpressionPickerStore, React, Select } from "@webpack/common";
-import { openModal } from "@utils/modal";
-import { findComponentByCodeLazy } from "@webpack";
-
 import "./styles.css";
-import captionMp4 from "./render/mp4";
+
+import { EquicordDevs } from "@utils/constants";
+import { openModal } from "@utils/modal";
+import definePlugin from "@utils/types";
+import { findComponentByCodeLazy } from "@webpack";
+import { ExpressionPickerStore, React, Select } from "@webpack/common";
+
 import captionGif from "./render/gif";
-import Modal from "./ui/modal";
 import type { GifTransform } from "./render/gifRenderer";
+import captionMp4 from "./render/mp4";
+import Modal from "./ui/modal";
 import { showError } from "./ui/statusCard";
 
 const PencilIcon = findComponentByCodeLazy("0-2.82 0l-1.38 1.38a1");
@@ -48,11 +50,11 @@ async function fetchAllGoogleFonts(): Promise<GoogleFontMetadata[]> {
     if (cachedFonts !== null) {
         return cachedFonts;
     }
-    
+
     if (fontsPromise !== null) {
         return fontsPromise;
     }
-    
+
     fontsPromise = fetch("https://fonts.google.com/$rpc/fonts.fe.catalog.actions.metadata.MetadataService/FontSearch", {
         method: "POST",
         headers: {
@@ -63,28 +65,49 @@ async function fetchAllGoogleFonts(): Promise<GoogleFontMetadata[]> {
     })
         .then(res => res.ok ? res.json() : null)
         .then(data => {
-            const rows = Array.isArray(data?.[1]) ? data[1] : [];
-            const fonts = rows
-                .map(([_, fontData]: [string, any[]]) => {
-                    const family = fontData[0];
-                    if (!family || family.length > 100) return null;
-                    if (!/^[a-zA-Z0-9\s\-_']+$/.test(family)) return null;
+            const rows = Array.isArray(data?.[1]) ? (data[1] as Array<[string, any[]]>) : [];
+            const fonts: GoogleFontMetadata[] = [];
 
-                    return {
-                        family,
-                        displayName: fontData[1] || family,
-                        authors: fontData[2] || [],
-                        category: fontData[3] || 0,
-                        popularity: 0,
-                        variants: fontData[6] ? fontData[6].map((variant: any[]) => ({
-                            axes: variant[0] ? variant[0].map(([tag, min, max]: [string, number, number]) => ({
-                                tag, min, max
-                            })) : []
-                        })) : []
-                    };
-                })
-                .filter((font): font is GoogleFontMetadata => font !== null)
-                .sort((a, b) => a.family.localeCompare(b.family));
+            for (const row of rows) {
+                const fontData = row?.[1];
+                if (!Array.isArray(fontData)) continue;
+
+                const family = typeof fontData[0] === "string" ? fontData[0] : "";
+                if (!family || family.length > 100) continue;
+                if (!/^[a-zA-Z0-9\s\-_']+$/.test(family)) continue;
+
+                const displayName = typeof fontData[1] === "string" ? fontData[1] : family;
+                const authors = Array.isArray(fontData[2])
+                    ? fontData[2].filter((author: unknown): author is string => typeof author === "string")
+                    : [];
+                const category = typeof fontData[3] === "number" ? fontData[3] : undefined;
+                const variants = Array.isArray(fontData[6])
+                    ? fontData[6].map((variant: any[]) => {
+                        const axesSource = Array.isArray(variant?.[0]) ? variant[0] : [];
+                        const axes = axesSource
+                            .map((axis: any[]) => {
+                                const tag = axis?.[0];
+                                const min = axis?.[1];
+                                const max = axis?.[2];
+                                if (typeof tag !== "string" || typeof min !== "number" || typeof max !== "number") return null;
+                                return { tag, min, max };
+                            })
+                            .filter((axis): axis is { tag: string; min: number; max: number } => axis !== null);
+                        return { axes };
+                    })
+                    : [];
+
+                fonts.push({
+                    family,
+                    displayName,
+                    authors,
+                    category,
+                    popularity: 0,
+                    variants
+                });
+            }
+
+            fonts.sort((a, b) => a.family.localeCompare(b.family));
 
             cachedFonts = fonts;
             return fonts;
@@ -93,7 +116,7 @@ async function fetchAllGoogleFonts(): Promise<GoogleFontMetadata[]> {
             cachedFonts = [];
             return cachedFonts;
         });
-    
+
     return fontsPromise;
 }
 
@@ -155,7 +178,7 @@ export function FontSelector({ onSelect }: { onSelect: (font: GoogleFontMetadata
             loadGoogleFont(option.value);
             loadedFonts.current.add(option.value);
         }
-        
+
         return (
             <span style={{ fontFamily: `"${option.value}", sans-serif` }}>
                 {option.label}
@@ -189,8 +212,8 @@ function showCaptioner(width: number, height: number, element: HTMLElement, onCo
             {...modalProps}
             width={width}
             element={element}
-            onSubmit={(cb) => submitCallback = cb}
-            onConfirm={(transform) => {
+            onSubmit={cb => submitCallback = cb}
+            onConfirm={transform => {
                 ExpressionPickerStore.closeExpressionPicker();
                 if (transform) {
                     onConfirm(transform);
@@ -252,7 +275,7 @@ export default definePlugin({
 
                         image.addEventListener("load", () => {
                             const { width, height } = image;
-                            showCaptioner(width, height, image, (transform) => {
+                            showCaptioner(width, height, image, transform => {
                                 captionGif(finalUrl, width, height, transform);
                             });
                         });
@@ -269,7 +292,7 @@ export default definePlugin({
 
                         video.addEventListener("canplaythrough", () => {
                             const { videoWidth, videoHeight } = video;
-                            showCaptioner(videoWidth, videoHeight, video, (transform) => {
+                            showCaptioner(videoWidth, videoHeight, video, transform => {
                                 captionMp4(finalUrl, videoWidth, videoHeight, transform);
                             });
                         }, { once: true });
