@@ -1,7 +1,14 @@
-import { Button } from "@components/Button";
-import { React, useCallback, useMemo, useState } from "@webpack/common";
-import { ModalCloseButton, ModalContent, ModalFooter, ModalHeader, ModalProps as VencordModalProps, ModalRoot, ModalSize } from "@utils/modal";
+/*
+ * Vencord, a Discord client mod
+ * Copyright (c) 2026 Vendicated and contributors
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ */
+
 import { BaseText } from "@components/BaseText";
+import { Button } from "@components/Button";
+import { ModalCloseButton, ModalContent, ModalFooter, ModalHeader, ModalProps as VencordModalProps, ModalRoot, ModalSize } from "@utils/modal";
+import { React, useCallback, useMemo, useState } from "@webpack/common";
+
 import type { GifTransform, OnSubmit } from "../render/gifRenderer";
 import Captioner from "./captioner";
 import { clearStatus, showCreating } from "./statusCard";
@@ -53,7 +60,7 @@ export default function Modal({ width, element, onSubmit, onConfirm, ...modalPro
 				<ModalCloseButton onClick={modalProps.onClose} />
 			</ModalHeader>
 			<ModalContent className="gc-modal">
-				<Captioner width={width} element={captionElement} onSubmit={useCallback((cb) => {
+				<Captioner width={width} element={captionElement} onSubmit={useCallback(cb => {
 					setSubmitCallback(() => cb);
 				}, [])} />
 			</ModalContent>

@@ -23,6 +23,170 @@ import { showError } from "./ui/statusCard";
 
 const PencilIcon = findComponentByCodeLazy("0-2.82 0l-1.38 1.38a1");
 
+type MediaElement = HTMLImageElement | HTMLVideoElement;
+
+interface MediaDetails {
+    element: MediaElement;
+    width: number;
+    height: number;
+    url: string;
+}
+
+const URL_KEYWORDS = ["url", "src", "proxy"];
+const URL_CONTAINER_KEYS = ["gif", "media", "image", "video", "thumbnail", "preview", "result", "item"];
+
+function normalizeUrl(url: string) {
+    if (url.startsWith("//")) return `https:${url}`;
+    return url;
+}
+
+function looksLikeUrl(value: string) {
+    return value.startsWith("http://") || value.startsWith("https://") || value.startsWith("//");
+}
+
+function findMediaElement(trigger: HTMLElement): MediaElement | null {
+    const container = trigger.closest("li") ?? trigger.closest('[role="listitem"]') ?? trigger.parentElement;
+    const video = container?.querySelector("video") as HTMLVideoElement | null;
+    if (video) return video;
+    return container?.querySelector("img") as HTMLImageElement | null;
+}
+
+function getElementUrl(element: MediaElement): string | null {
+    if (element instanceof HTMLVideoElement) {
+        return element.currentSrc || element.src || element.getAttribute("src");
+    }
+    return element.currentSrc || element.src || element.getAttribute("src");
+}
+
+function applyTenorMp4Fix(url: string, isGif: boolean) {
+    if (isGif) return url;
+    try {
+        const host = new URL(url).host;
+        if (!host.endsWith("tenor.com")) return url;
+    } catch {
+        return url;
+    }
+
+    const typeIndex = url.lastIndexOf("/") - 1;
+    if (typeIndex <= 0 || url[typeIndex] === "o") return url;
+    return url.slice(0, typeIndex) + "o" + url.slice(typeIndex + 1);
+}
+
+function collectCandidateUrls(source: any, depth = 0, out = new Set<string>()) {
+    if (!source || depth > 2) return out;
+    if (typeof source === "string") {
+        if (looksLikeUrl(source)) out.add(normalizeUrl(source));
+        return out;
+    }
+    if (Array.isArray(source)) {
+        for (const entry of source) collectCandidateUrls(entry, depth + 1, out);
+        return out;
+    }
+    if (typeof source !== "object") return out;
+
+    for (const [key, value] of Object.entries(source)) {
+        const keyLower = key.toLowerCase();
+        if (typeof value === "string") {
+            if (looksLikeUrl(value) && URL_KEYWORDS.some(keyword => keyLower.includes(keyword))) {
+                out.add(normalizeUrl(value));
+            }
+            continue;
+        }
+        if (value && typeof value === "object" && URL_CONTAINER_KEYS.some(keyword => keyLower.includes(keyword))) {
+            collectCandidateUrls(value, depth + 1, out);
+        }
+    }
+
+    return out;
+}
+
+function scoreUrl(url: string) {
+    let host = "";
+    try {
+        host = new URL(url).host;
+    } catch {}
+
+    let score = 0;
+    if (host.endsWith("discordapp.net") || host.endsWith("discordapp.com")) score += 100;
+    if (host.includes("images-ext")) score += 20;
+    if (host.includes("media.discordapp.net") || host.includes("cdn.discordapp.com")) score += 10;
+    if (host.endsWith("klipy.com")) score += 5;
+    if (host.endsWith("tenor.com")) score += 5;
+    if (url.includes(".gif")) score += 1;
+    return score;
+}
+
+function orderCandidateUrls(preferred: string | null, candidates: Set<string>) {
+    const all = Array.from(candidates);
+    if (!all.length) return [];
+
+    const rest = preferred ? all.filter(url => url !== preferred) : all;
+    rest.sort((a, b) => scoreUrl(b) - scoreUrl(a));
+
+    return preferred ? [preferred, ...rest] : rest;
+}
+
+function isLikelyVideoUrl(url: string) {
+    return /\.(webm|mp4|m4v)(\?|$)/i.test(url);
+}
+
+async function resolveExistingMedia(element: MediaElement): Promise<MediaDetails | null> {
+    const elementUrl = getElementUrl(element);
+    if (!elementUrl) return null;
+    const url = normalizeUrl(elementUrl);
+
+    if (element instanceof HTMLImageElement) {
+        if (element.complete && element.naturalWidth) {
+            return { element, width: element.naturalWidth, height: element.naturalHeight, url };
+        }
+        return await new Promise(resolve => {
+            element.addEventListener("load", () => {
+                resolve({ element, width: element.naturalWidth, height: element.naturalHeight, url });
+            }, { once: true });
+            element.addEventListener("error", () => resolve(null), { once: true });
+        });
+    }
+
+    if (element.readyState >= 1 && element.videoWidth) {
+        return { element, width: element.videoWidth, height: element.videoHeight, url };
+    }
+
+    return await new Promise(resolve => {
+        element.addEventListener("loadedmetadata", () => {
+            resolve({ element, width: element.videoWidth, height: element.videoHeight, url });
+        }, { once: true });
+        element.addEventListener("error", () => resolve(null), { once: true });
+    });
+}
+
+async function createMediaFromUrl(url: string, preferVideo: boolean): Promise<MediaDetails | null> {
+    const normalizedUrl = normalizeUrl(url);
+    if (!preferVideo) {
+        const image = new Image();
+        image.src = normalizedUrl;
+        return await new Promise(resolve => {
+            image.addEventListener("load", () => {
+                resolve({ element: image, width: image.naturalWidth, height: image.naturalHeight, url: normalizedUrl });
+            }, { once: true });
+            image.addEventListener("error", () => resolve(null), { once: true });
+        });
+    }
+
+    const video = document.createElement("video");
+    video.src = normalizedUrl;
+    video.autoplay = true;
+    video.loop = true;
+    video.muted = true;
+    video.load();
+
+    return await new Promise(resolve => {
+        video.addEventListener("loadedmetadata", () => {
+            resolve({ element: video, width: video.videoWidth, height: video.videoHeight, url: normalizedUrl });
+        }, { once: true });
+        video.addEventListener("error", () => resolve(null), { once: true });
+    });
+}
+
 interface GoogleFontMetadata {
     family: string;
     displayName: string;
@@ -204,7 +368,12 @@ export function FontSelector({ onSelect }: { onSelect: (font: GoogleFontMetadata
     );
 }
 
-function showCaptioner(width: number, height: number, element: HTMLElement, onConfirm: (transform: GifTransform) => void) {
+function showCaptioner(
+    width: number,
+    height: number,
+    element: HTMLElement,
+    onConfirm: (transform: GifTransform) => void
+) {
     let submitCallback: () => GifTransform;
 
     openModal(modalProps => (
@@ -249,57 +418,46 @@ export default definePlugin({
         if (!instance?.props) return null;
 
         const isGif = instance.props.format === 1;
-        const url = instance.props.src;
-
-        if (!url) return null;
+        const directUrl = typeof instance.props.src === "string" ? instance.props.src : null;
 
         return (
             <button
                 className="gc-trigger gc-trigger-icon"
                 onClick={async (e: React.MouseEvent) => {
                     e.stopPropagation();
-                    let finalUrl = url;
+                    const trigger = e.currentTarget as HTMLElement;
+                    const existingElement = findMediaElement(trigger);
+                    const elementUrl = existingElement ? getElementUrl(existingElement) : null;
+                    const normalizedElementUrl = elementUrl ? normalizeUrl(elementUrl) : null;
+                    const existingMedia = existingElement ? await resolveExistingMedia(existingElement) : null;
 
-                    // For some reason tenor urls have an id that ends with "o" for mp4
-                    if (!isGif) {
-                        const typeIndex = finalUrl.lastIndexOf("/") - 1;
-                        finalUrl = finalUrl.slice(0, typeIndex) + "o" + finalUrl.slice(typeIndex + 1);
+                    const candidates = collectCandidateUrls(instance.props);
+                    const adjustedCandidates = new Set<string>();
+                    if (normalizedElementUrl) adjustedCandidates.add(normalizedElementUrl);
+                    if (existingMedia?.url) adjustedCandidates.add(existingMedia.url);
+                    if (directUrl) adjustedCandidates.add(applyTenorMp4Fix(normalizeUrl(directUrl), isGif));
+                    for (const candidate of candidates) {
+                        adjustedCandidates.add(applyTenorMp4Fix(candidate, isGif));
                     }
 
-                    // Fix errors caused by protocol-relative urls
-                    if (finalUrl.startsWith("//")) finalUrl = finalUrl.replace("//", "https://");
+                    const preferredUrl = existingMedia?.url ?? normalizedElementUrl ?? (directUrl ? applyTenorMp4Fix(normalizeUrl(directUrl), isGif) : null);
+                    const orderedUrls = orderCandidateUrls(preferredUrl, adjustedCandidates);
+                    const primaryUrl = orderedUrls[0];
+                    const media = existingMedia ?? (
+                        primaryUrl
+                            ? await createMediaFromUrl(primaryUrl, !isGif || isLikelyVideoUrl(primaryUrl))
+                            : null
+                    );
 
-                    if (isGif) {
-                        const image = document.createElement("img");
-                        image.src = finalUrl;
-
-                        image.addEventListener("load", () => {
-                            const { width, height } = image;
-                            showCaptioner(width, height, image, transform => {
-                                captionGif(finalUrl, width, height, transform);
-                            });
-                        });
-                        image.addEventListener("error", () => {
-                            showError("Failed to load gif");
-                        });
-                    } else {
-                        const video = document.createElement("video");
-                        video.src = finalUrl;
-                        video.autoplay = true;
-                        video.loop = true;
-                        video.muted = true;
-                        video.load();
-
-                        video.addEventListener("canplaythrough", () => {
-                            const { videoWidth, videoHeight } = video;
-                            showCaptioner(videoWidth, videoHeight, video, transform => {
-                                captionMp4(finalUrl, videoWidth, videoHeight, transform);
-                            });
-                        }, { once: true });
-                        video.addEventListener("error", () => {
-                            showError("Failed to load gif");
-                        });
+                    if (!media) {
+                        showError("Failed to load gif");
+                        return;
                     }
+
+                    showCaptioner(media.width, media.height, media.element, transform => {
+                        const render = media.element instanceof HTMLVideoElement ? captionMp4 : captionGif;
+                        render(orderedUrls.length ? orderedUrls : media.url, media.width, media.height, transform);
+                    });
                 }}
             >
                 <PencilIcon size="xs" color="black" fill="black" />

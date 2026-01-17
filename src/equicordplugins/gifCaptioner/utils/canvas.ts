@@ -12,7 +12,7 @@ export function getLines(ctx: CanvasRenderingContext2D, text: string, maxWidth: 
 
     for (let i = 1; i < words.length; i++) {
         const word = words[i];
-        const width = ctx.measureText(currentLine + " " + word).width;
+        const { width } = ctx.measureText(currentLine + " " + word);
         if (width < maxWidth) {
             currentLine += " " + word;
         } else {

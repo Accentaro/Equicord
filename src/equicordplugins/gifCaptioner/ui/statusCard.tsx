@@ -1,4 +1,10 @@
-import { React, createRoot } from "@webpack/common";
+/*
+ * Vencord, a Discord client mod
+ * Copyright (c) 2026 Vendicated and contributors
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ */
+
+import { createRoot,React } from "@webpack/common";
 
 type StatusType = "loading" | "success" | "error";
 
@@ -13,6 +19,7 @@ let container: HTMLDivElement | null = null;
 let setState: ((state: StatusState | null) => void) | null = null;
 let closeTimer: ReturnType<typeof setTimeout> | null = null;
 let failTimer: ReturnType<typeof setTimeout> | null = null;
+const FAILURE_TIMEOUT_MS = 60000;
 
 function ensureRoot() {
     if (root && container) return;
@@ -100,12 +107,12 @@ function scheduleFailure(ms: number) {
 
 export function showCreating() {
     showStatus({ type: "loading", title: "Creating GIF" });
-    scheduleFailure(10000);
+    scheduleFailure(FAILURE_TIMEOUT_MS);
 }
 
 export function showUploading() {
     showStatus({ type: "loading", title: "Uploading GIF" });
-    scheduleFailure(10000);
+    scheduleFailure(FAILURE_TIMEOUT_MS);
 }
 
 export function showSent() {

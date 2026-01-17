@@ -1,12 +1,19 @@
-import GifWorker from "../gif.worker.txt";
-import { getUrl } from "../utils/blob";
-import { getLines } from "../utils/canvas";
+/*
+ * Vencord, a Discord client mod
+ * Copyright (c) 2026 Vendicated and contributors
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ */
+
 import GIF from "gif.js";
-import { uploadFile } from "../utils/upload";
 import type { ParsedFrame, ParsedGif } from "gifuct-js";
-import { getMaxFileSize } from "../utils/permissions";
+
+import GifWorker from "../gif.worker.txt";
 import { getSelectedFont } from "../index";
 import { showError } from "../ui/statusCard";
+import { getUrl } from "../utils/blob";
+import { getLines } from "../utils/canvas";
+import { getMaxFileSize } from "../utils/permissions";
+import { uploadFile } from "../utils/upload";
 
 export interface CaptionTransform {
 	text: string;
@@ -25,11 +32,11 @@ export interface SpeechBubbleTransform {
 export type GifTransform = CaptionTransform | SpeechBubbleTransform;
 export type OnSubmit = (callback: () => GifTransform) => void;
 
-let worker = getUrl(GifWorker);
+const worker = getUrl(GifWorker);
 
 export default class GifRenderer {
 	canvas = document.createElement("canvas");
-	ctx = this.canvas.getContext("2d")!;
+	ctx = this.canvas.getContext("2d", { willReadFrequently: true })!;
 	topOffset = 0;
 	width: number;
 	height: number; // Doesn't include caption height
@@ -51,7 +58,7 @@ export default class GifRenderer {
 
 		if(transform.type === "caption") {
 			this.ctx.font = `${transform.size}px ${getSelectedFont()}`;
-			let lines = getLines(this.ctx, transform.text, this.width);
+			const lines = getLines(this.ctx, transform.text, this.width);
 			fullHeight = lines.length * transform.size + 10 + this.height;
 		}
 
@@ -133,7 +140,10 @@ export default class GifRenderer {
 	}
 
 	render() {
-		this.gif.once("finished", (blob) => {
+		this.gif.on("abort", () => {
+			showError("Failed to encode gif");
+		});
+		this.gif.once("finished", blob => {
 			const file = new File([ blob ], "rendered.gif", { type: "image/gif" });
 			uploadFile(file);
 		});
@@ -143,7 +153,7 @@ export default class GifRenderer {
 
 	drawCaption(text: string, width: number, size: number) {
 		this.ctx.font = `${size}px ${getSelectedFont()}`;
-		let lines = getLines(this.ctx, text, width);
+		const lines = getLines(this.ctx, text, width);
 		this.topOffset = lines.length * size + 10;
 
 		// add background

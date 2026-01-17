@@ -4,11 +4,12 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-import { CloudUpload, type Channel } from "@vencord/discord-types";
+import { sendMessage } from "@utils/discord";
+import { type Channel,CloudUpload } from "@vencord/discord-types";
 import { CloudUploadPlatform } from "@vencord/discord-types/enums";
 import { findLazy } from "@webpack";
 import { ChannelStore, FluxDispatcher, SelectedChannelStore, SelectedGuildStore, UserStore } from "@webpack/common";
-import { sendMessage } from "@utils/discord";
+
 import { showError, showSent, showUploading } from "../ui/statusCard";
 
 const CloudUploadConstructor = findLazy(m => m.prototype?.trackUploadFinished) as typeof CloudUpload;
