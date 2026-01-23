@@ -173,6 +173,7 @@ export function GalleryView(props: {
     const [mediaFilter, setMediaFilter] = useState<MediaFilterType>((initialMediaFilter as MediaFilterType) || "newest");
     const [usernameFilter, setUsernameFilter] = useState<string>(initialUsernameFilter || "all");
     const [failedVideos, setFailedVideos] = useState<Set<string>>(new Set());
+    const [loadedImages, setLoadedImages] = useState<Set<string>>(new Set());
     const [currentPage, setCurrentPage] = useState(initialCurrentPage || 1);
 
     // Initialize viewport with useLayoutEffect and ResizeObserver for better performance
@@ -402,6 +403,7 @@ export function GalleryView(props: {
         }
         // Only reset if filters actually changed (not when restoring state)
         setCurrentPage(1);
+        setLoadedImages(new Set()); // Reset loaded images when filters change
         const el = scrollRef.current;
         if (el) {
             el.scrollTop = 0;
@@ -423,6 +425,36 @@ export function GalleryView(props: {
         }
     }, [currentPage, totalPages, hasMore, isLoading, onLoadMore]);
 
+    // Clean up loaded images state to only include items currently visible
+    // This prevents stale state from affecting current page items
+    // Use a ref to track previous items to avoid unnecessary updates
+    const prevItemsToShowRef = React.useRef<GalleryItem[]>([]);
+    useEffect(() => {
+        const prevItems = prevItemsToShowRef.current;
+        const currentIds = new Set(itemsToShow.map(item => item?.stableId).filter(Boolean));
+        const prevIds = new Set(prevItems.map(item => item?.stableId).filter(Boolean));
+
+        // Only update if the set of IDs has actually changed
+        const hasChanged = currentIds.size !== prevIds.size ||
+            Array.from(currentIds).some(id => !prevIds.has(id)) ||
+            Array.from(prevIds).some(id => !currentIds.has(id));
+
+        if (hasChanged) {
+            setLoadedImages(prev => {
+                const cleaned = new Set(prev);
+                // Remove any IDs that are no longer in the current view
+                for (const id of cleaned) {
+                    if (!currentIds.has(id)) {
+                        cleaned.delete(id);
+                    }
+                }
+                return cleaned;
+            });
+        }
+
+        prevItemsToShowRef.current = itemsToShow;
+    }, [itemsToShow]);
+
     const handleThumbClick = useCallback((e: React.MouseEvent, stableId: string, isVideo: boolean) => {
         log.debug("render", "Thumbnail clicked", { stableId, isVideo });
         e.preventDefault();
@@ -430,6 +462,21 @@ export function GalleryView(props: {
         // Pass filtered items so fullscreen respects the current filter
         onSelect(stableId, isVideo, filteredItems);
     }, [onSelect, filteredItems]);
+
+    const handleImageLoad = useCallback((stableId: string) => {
+        setLoadedImages(prev => {
+            const newSet = new Set(prev);
+            newSet.add(stableId);
+            return newSet;
+        });
+    }, []);
+
+    const handleImageError = useCallback((stableId: string) => {
+        // Defer the error marking to avoid state updates during render
+        setTimeout(() => {
+            onMarkFailed(stableId);
+        }, 0);
+    }, [onMarkFailed]);
 
     const handlePrevPage = useCallback(() => {
         if (currentPage > 1) {
@@ -504,6 +551,10 @@ export function GalleryView(props: {
                     {itemsToShow.map(item => {
                         if (!item?.stableId) return null;
 
+                        const isLoaded = loadedImages.has(item.stableId);
+                        const hasError = failedVideos.has(item.stableId);
+                        const isVideo = item.isVideo && !item.isEmbed && !hasError;
+
                         return (
                             <button
                                 key={item.stableId}
@@ -512,11 +563,14 @@ export function GalleryView(props: {
                                 className="vc-gallery-thumbnail-button"
                             >
                                 <div className="vc-gallery-thumbnail-wrapper">
-                                    {item.isVideo && !item.isEmbed && !failedVideos.has(item.stableId) ? (
+                                    {/* Placeholder - shows at 100% opacity initially, fades out when image loads */}
+                                    <div className={`vc-gallery-thumbnail-placeholder ${isLoaded || hasError ? "vc-gallery-thumbnail-placeholder-hidden" : ""}`} />
+
+                                    {isVideo ? (
                                         <>
                                             <video
                                                 src={item.proxyUrl ?? item.url}
-                                                className="vc-gallery-thumbnail-image"
+                                                className={`vc-gallery-thumbnail-image ${isLoaded || hasError ? "vc-gallery-thumbnail-image-visible" : ""} ${hasError ? "vc-gallery-thumbnail-image-error" : ""}`}
                                                 muted
                                                 loop
                                                 playsInline
@@ -527,10 +581,11 @@ export function GalleryView(props: {
                                                     if (video.duration && video.duration > 0) {
                                                         video.currentTime = 0.1;
                                                     }
+                                                    handleImageLoad(item.stableId);
                                                 }}
                                                 onError={() => {
                                                     setFailedVideos(prev => new Set(prev).add(item.stableId));
-                                                    onMarkFailed(item.stableId);
+                                                    handleImageError(item.stableId);
                                                 }}
                                             />
                                             <div className="vc-gallery-play-overlay">
@@ -545,10 +600,9 @@ export function GalleryView(props: {
                                             alt={item.filename ?? "Image"}
                                             loading={item.isAnimated ? "eager" : "lazy"}
                                             decoding="async"
-                                            className="vc-gallery-thumbnail-image"
-                                            onError={() => {
-                                                onMarkFailed(item.stableId);
-                                            }}
+                                            className={`vc-gallery-thumbnail-image ${isLoaded || hasError ? "vc-gallery-thumbnail-image-visible" : ""} ${hasError ? "vc-gallery-thumbnail-image-error" : ""}`}
+                                            onLoad={() => handleImageLoad(item.stableId)}
+                                            onError={() => handleImageError(item.stableId)}
                                         />
                                     )}
                                 </div>
