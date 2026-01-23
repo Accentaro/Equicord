@@ -182,7 +182,25 @@ export function SingleView(props: {
     const { isVideo, isAnimated, isEmbed, embedUrl } = item;
 
     return (
-        <div className="vc-gallery-lightbox vc-gallery-lightbox-large">
+        <div className="vc-gallery-lightbox">
+            <button
+                disabled={!hasPrev}
+                onClick={handlePrev}
+                className="vc-gallery-nav-button"
+            >
+                <svg
+                    width="24"
+                    height="24"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    className="vc-gallery-nav-icon"
+                >
+                    <path
+                        d="M15.41 7.41L14 6L8 12L14 18L15.41 16.59L10.83 12L15.41 7.41Z"
+                        fill="currentColor"
+                    />
+                </svg>
+            </button>
             <div className="vc-gallery-lightbox-content">
                 {isEmbed && embedUrl ? (
                     <div className="vc-gallery-embed-container vc-gallery-embed-large">
@@ -252,29 +270,10 @@ export function SingleView(props: {
                     />
                 )}
             </div>
-
-            <button
-                disabled={!hasPrev}
-                onClick={handlePrev}
-                className="vc-gallery-nav-button vc-gallery-nav-button-left"
-            >
-                <svg
-                    width="24"
-                    height="24"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    className="vc-gallery-nav-icon"
-                >
-                    <path
-                        d="M15.41 7.41L14 6L8 12L14 18L15.41 16.59L10.83 12L15.41 7.41Z"
-                        fill="currentColor"
-                    />
-                </svg>
-            </button>
             <button
                 disabled={!hasNext}
                 onClick={handleNext}
-                className="vc-gallery-nav-button vc-gallery-nav-button-right"
+                className="vc-gallery-nav-button"
             >
                 <svg
                     width="24"
