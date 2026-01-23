@@ -102,7 +102,7 @@
 /* Gallery scroll container - Discord native thin scrollbar style */
 .vc-channel-gallery-scroll {
     height: 100%;
-    overflow: auto !important;
+    overflow: hidden scroll !important;
     padding: 14px;
     box-sizing: border-box;
     scrollbar-width: thin;
