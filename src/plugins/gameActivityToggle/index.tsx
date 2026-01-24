@@ -23,7 +23,7 @@ import { definePluginSettings } from "@api/Settings";
 import { UserAreaButton, UserAreaRenderProps } from "@api/UserArea";
 import { getUserSettingLazy } from "@api/UserSettings";
 import equicordToolbox from "@equicordplugins/equicordToolbox";
-import { Devs } from "@utils/constants";
+import { Devs, EquicordDevs } from "@utils/constants";
 import definePlugin, { OptionType } from "@utils/types";
 import { Menu } from "@webpack/common";
 
@@ -83,7 +83,7 @@ function GameActivityToggleButton({ iconForeground, hideTooltips, nameplate }: U
 export default definePlugin({
     name: "GameActivityToggle",
     description: "Adds a button next to the mic and deafen button to toggle game activity.",
-    authors: [Devs.Nuckyz, Devs.RuukuLada],
+    authors: [Devs.Nuckyz, Devs.RuukuLada, EquicordDevs.benjii],
     dependencies: ["UserSettingsAPI"],
     settings,
 
