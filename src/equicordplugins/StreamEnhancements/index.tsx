@@ -11,17 +11,15 @@ import { Menu } from "@webpack/common";
 export default definePlugin({
     name: "StreamEnhancements",
     description: "Adds more streaming options like higher framerates, resolutions.",
-    authors: [EquicordDevs.Prism, EquicordDevs.benjii],
+    authors: [EquicordDevs.Prism],
 
     patches: [
         {
             find: "ApplicationStreamFPS:()=>",
             replacement: {
                 match: /,guildPremiumTier:\i\.\i\.TIER_\d/g,
-                replace: "",
-                noWarn: true
-            },
-            noWarn: true
+                replace: ""
+            }
         },
         {
             find: "canStreamQuality:",
@@ -42,21 +40,17 @@ export default definePlugin({
             replacement: [
                 {
                     match: /(\[v\.ws\.FPS_15,v\.ws\.FPS_30,v\.ws\.FPS_60\])/,
-                    replace: "$self.patchFPSArray($1)",
-                    noWarn: true
+                    replace: "$self.patchFPSArray($1)"
                 },
                 {
                     match: /(C\.map\(e=>)/,
-                    replace: "$self.patchFPSArray(C).map(e=>",
-                    noWarn: true
+                    replace: "$self.patchFPSArray(C).map(e=>"
                 },
                 {
-                    match: /(O=\[)(\{value:v\.LY\.RESOLUTION_720[^}]*\},\{value:v\.LY\.RESOLUTION_1080[^}]*\},\{value:v\.LY\.RESOLUTION_1440[^}]*\},\{value:v\.LY\.RESOLUTION_SOURCE[^}]*\})(\])/,
-                    replace: "O=$self.patchResolutionArray([$2])",
-                    noWarn: true
+                    match: /(O=\[)(\{value:v\.LY\.RESOLUTION_720[^\}]*\},\{value:v\.LY\.RESOLUTION_1080[^\}]*\},\{value:v\.LY\.RESOLUTION_1440[^\}]*\},\{value:v\.LY\.RESOLUTION_SOURCE[^\}]*\})(\])/,
+                    replace: "O=$self.patchResolutionArray([$2])"
                 }
-            ],
-            noWarn: true
+            ]
         }
     ],
 
