@@ -92,12 +92,24 @@ export const BubbleContainer = ErrorBoundary.wrap(
         }, [settings, removeBubble, updateBubble, trashZoneY, magnetRadius, clearLivePosition]);
 
         const handleBubbleClick = useCallback((bubbleId: string) => {
-            setActiveChatBubbleId(prev => prev === bubbleId ? null : bubbleId);
-        }, []);
+            setActiveChatBubbleId(prev => {
+                const next = prev === bubbleId ? null : bubbleId;
+                if (next === bubbleId) {
+                    updateBubble(bubbleId, { unreadCount: 0 });
+                }
+                return next;
+            });
+        }, [updateBubble]);
 
         const handlePreviewClick = useCallback((bubbleId: string) => {
+            updateBubble(bubbleId, { unreadCount: 0 });
             setActiveChatBubbleId(bubbleId);
-        }, []);
+        }, [updateBubble]);
+
+        React.useEffect(() => {
+            if (!activeChatBubbleId) return;
+            updateBubble(activeChatBubbleId, { unreadCount: 0 });
+        }, [activeChatBubbleId, updateBubble]);
 
         const handleBubbleHover = useCallback((bubbleId: string, isHovered: boolean) => {
             setHoveredBubbleId(isHovered ? bubbleId : null);

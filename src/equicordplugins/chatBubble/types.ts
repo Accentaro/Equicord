@@ -26,9 +26,19 @@ export interface ChatBubbleData {
     createdAt: number;
 }
 
+export interface PreviewMedia {
+    kind: "image" | "video";
+    src: string;
+    width?: number;
+    height?: number;
+    posterSrc?: string;
+}
+
 export interface MessagePreview {
     bubbleId: string;
     content: string;
+    senderName?: string;
+    media?: PreviewMedia;
     timestamp: number;
 }
 

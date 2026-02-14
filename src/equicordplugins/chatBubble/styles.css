@@ -147,6 +147,11 @@
     transition: box-shadow 0.2s ease;
 }
 
+.vc-chatbubble-message-preview.vc-chatbubble-message-preview-has-media {
+    min-width: 190px;
+    padding: 10px;
+}
+
 .vc-chatbubble-message-preview:hover {
     box-shadow: 0 12px 32px rgb(0 0 0 / 60%);
 }
@@ -158,9 +163,28 @@
     margin-bottom: 2px;
 }
 
+.vc-chatbubble-message-preview-media-wrap {
+    margin-top: 6px;
+    border-radius: 12px;
+    overflow: hidden;
+    background: var(--background-secondary-alt);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.vc-chatbubble-message-preview-media {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block;
+    background: var(--background-secondary-alt);
+}
+
 .vc-chatbubble-message-preview-content {
     font-size: 14px;
     color: var(--text-default);
+    margin-top: 6px;
     overflow-wrap: break-word;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -172,11 +196,11 @@
 .vc-chatbubble-chat-window {
     position: fixed;
     resize: both;
-    overflow: hidden;
-    min-width: 280px;
+    overflow: visible auto;
+    min-width: 300px;
     min-height: 300px;
-    max-width: 90vw;
-    max-height: 80vh;
+    max-width: calc(100vw - 20px);
+    max-height: calc(100vh - 20px);
     border-radius: 12px;
     display: flex;
     flex-direction: column;
@@ -227,9 +251,17 @@
     gap: 10px;
     flex: 1;
     min-height: 120px;
-    overflow-y: auto;
+    overflow: hidden;
     background: transparent;
     list-style: none;
+}
+
+.vc-chatbubble-chat-window-scroller {
+    overflow-x: hidden !important;
+}
+
+.vc-chatbubble-chat-window-scroller [id^="chat-bubble-msg-"] {
+    width: 100% !important;
 }
 
 .vc-chatbubble-chat-window-empty {
@@ -246,9 +278,12 @@
     align-items: stretch;
 }
 
-.vc-chatbubble-chat-window-message-bubble {
+.vc-chatbubble-chat-window-message-card {
     flex: 1;
     width: 100%;
+    box-sizing: border-box;
+    max-width: 100%;
+    min-width: 0;
     padding: 8px 12px;
     border-radius: 12px;
     overflow-wrap: break-word;

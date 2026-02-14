@@ -30,6 +30,7 @@ interface ChatWindowProps {
 function ChatWindowComponent({ bubble, position, bubbleSize, onSizeChange, isClosing }: ChatWindowProps) {
     const windowRef = React.useRef<HTMLDivElement>(null);
     const bottomRef = React.useRef<HTMLDivElement>(null);
+    const lastSizeRef = React.useRef({ width: 0, height: 0 });
     const channel = ChannelStore.getChannel(bubble.channelId);
     React.useEffect(() => {
         if (!MessageStore.hasPresent(bubble.channelId)) {
@@ -55,29 +56,31 @@ function ChatWindowComponent({ bubble, position, bubbleSize, onSizeChange, isClo
         return () => clearTimeout(timer);
     }, [scrollToBottom]);
 
+    const syncSize = React.useCallback(() => {
+        if (!windowRef.current) return;
+
+        const { width, height } = windowRef.current.getBoundingClientRect();
+        const nextWidth = Math.round(width);
+        const nextHeight = Math.round(height);
+        if (!nextWidth || !nextHeight) return;
+        if (lastSizeRef.current.width === nextWidth && lastSizeRef.current.height === nextHeight) return;
+
+        lastSizeRef.current = { width: nextWidth, height: nextHeight };
+
+        onSizeChange({ width: nextWidth, height: nextHeight });
+    }, [onSizeChange]);
+
     React.useEffect(() => {
-        let currentWidth = 0;
-        let currentHeight = 0;
-
-        const syncSize = () => {
-            if (!windowRef.current) return;
-
-            const { width, height } = windowRef.current.getBoundingClientRect();
-            const nextWidth = Math.round(width);
-            const nextHeight = Math.round(height);
-
-            if (!nextWidth || !nextHeight) return;
-            if (nextWidth === currentWidth && nextHeight === currentHeight) return;
-
-            currentWidth = nextWidth;
-            currentHeight = nextHeight;
-            onSizeChange({ width: nextWidth, height: nextHeight });
-        };
-
         syncSize();
         window.addEventListener("pointerup", syncSize);
-        return () => window.removeEventListener("pointerup", syncSize);
-    }, [onSizeChange]);
+        window.addEventListener("mouseup", syncSize);
+        window.addEventListener("resize", syncSize);
+        return () => {
+            window.removeEventListener("pointerup", syncSize);
+            window.removeEventListener("mouseup", syncSize);
+            window.removeEventListener("resize", syncSize);
+        };
+    }, [syncSize]);
 
     if (!channel) return null;
 
@@ -96,18 +99,25 @@ function ChatWindowComponent({ bubble, position, bubbleSize, onSizeChange, isClo
     const windowHeight = bubble.windowSize?.height ?? 400;
     const screenWidth = window.innerWidth;
     const screenHeight = window.innerHeight;
+    const viewportPadding = 10;
+    const renderedWidth = Math.min(windowWidth, Math.max(300, screenWidth - viewportPadding * 2));
+    const renderedHeight = Math.min(windowHeight, Math.max(300, screenHeight - viewportPadding * 2));
 
-    let left = position.x + bubbleSize + 15;
-    let top = position.y;
-
-    if (left + windowWidth > screenWidth) {
-        left = position.x - windowWidth - 15;
-    }
-    if (left < 0) left = 10;
-    if (top + windowHeight > screenHeight) {
-        top = screenHeight - windowHeight - 10;
-    }
-    if (top < 0) top = 10;
+    const rightSideLeft = position.x + bubbleSize + 15;
+    const leftSideLeft = position.x - renderedWidth - 15;
+    const preferredLeft = rightSideLeft + renderedWidth <= screenWidth - viewportPadding
+        ? rightSideLeft
+        : leftSideLeft;
+    const left = clamp(
+        preferredLeft,
+        viewportPadding,
+        Math.max(viewportPadding, screenWidth - renderedWidth - viewportPadding)
+    );
+    const top = clamp(
+        position.y,
+        viewportPadding,
+        Math.max(viewportPadding, screenHeight - renderedHeight - viewportPadding)
+    );
 
     return (
         <div
@@ -116,8 +126,8 @@ function ChatWindowComponent({ bubble, position, bubbleSize, onSizeChange, isClo
             style={{
                 left: `${left}px`,
                 top: `${top}px`,
-                width: `${windowWidth}px`,
-                height: `${windowHeight}px`
+                width: `${renderedWidth}px`,
+                height: `${renderedHeight}px`
             }}
         >
             <div className={cl("chat-window-header")}>
@@ -135,7 +145,11 @@ function ChatWindowComponent({ bubble, position, bubbleSize, onSizeChange, isClo
                         {messages.map(msg => (
                             <ChannelMessage
                                 key={msg.id}
-                                className={classes(messageClasses?.message, messageClasses?.cozyMessage)}
+                                className={classes(
+                                    messageClasses?.message,
+                                    messageClasses?.cozyMessage,
+                                    cl("chat-window-message-card")
+                                )}
                                 id={`chat-bubble-msg-${msg.id}`}
                                 groupId={msg.id}
                                 message={msg}
@@ -164,3 +178,7 @@ function ChatWindowComponent({ bubble, position, bubbleSize, onSizeChange, isClo
 }
 
 export const ChatWindow = ErrorBoundary.wrap(ChatWindowComponent, { noop: true });
+
+function clamp(value: number, min: number, max: number) {
+    return Math.min(Math.max(value, min), max);
+}
