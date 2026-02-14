@@ -12,8 +12,7 @@ import { managedStyleRootNode } from "@api/Styles";
 import ErrorBoundary from "@components/ErrorBoundary";
 import { EquicordDevs } from "@utils/constants";
 import { createAndAppendStyle } from "@utils/css";
-import definePlugin, { OptionType } from "@utils/types";
-import { ChannelType } from "@vencord/discord-types/enums";
+import definePlugin, { makeRange, OptionType } from "@utils/types";
 import { findCssClassesLazy } from "@webpack";
 import {
     ChannelStore,
@@ -28,7 +27,6 @@ import {
 import { BubbleContainer } from "./components/BubbleContainer";
 import { useBubbleState } from "./hooks/useBubbleState";
 import type { BubblePosition, ChatBubbleData, MessagePreview } from "./types";
-import { getScreenBounds } from "./utils/positioning";
 
 const settings = definePluginSettings({
     enableAnimations: {
@@ -40,7 +38,7 @@ const settings = definePluginSettings({
         type: OptionType.SLIDER,
         description: "Bubble size (pixels)",
         default: 60,
-        markers: [40, 50, 60, 70, 80, 90, 100],
+        markers: makeRange(40, 100, 10),
         stickToMarkers: false
     },
     avatarRing: {
@@ -101,6 +99,13 @@ function clamp(value: number, min: number, max: number) {
     return Math.min(Math.max(value, min), max);
 }
 
+function getScreenBounds() {
+    return {
+        width: window.innerWidth,
+        height: window.innerHeight
+    };
+}
+
 function getSafeBubblePosition(position: BubblePosition, bubbleSize: number): BubblePosition {
     const { width, height } = getScreenBounds();
     const padding = 10;
@@ -139,7 +144,8 @@ class BubbleManager {
     }
 
     getBubbles(): ChatBubbleData[] {
-        return this.bubbleState?.bubbles ?? [];
+        if (!this.bubbleState) return [];
+        return this.bubbleState.bubbles;
     }
 
     addMessagePreview(preview: MessagePreview) {
@@ -170,23 +176,11 @@ function BubbleContainerWrapper() {
 }
 
 function BubblePortal() {
-    const containerRef = React.useRef<HTMLDivElement | null>(null);
+    return ReactDOM.createPortal(<BubbleContainerWrapper />, document.body);
+}
 
-    if (!containerRef.current) {
-        const container = document.createElement("div");
-        container.id = "vc-chatbubble-root";
-        document.body.appendChild(container);
-        containerRef.current = container;
-    }
-
-    React.useEffect(() => {
-        return () => {
-            containerRef.current?.remove();
-            containerRef.current = null;
-        };
-    }, []);
-
-    return ReactDOM.createPortal(<BubbleContainerWrapper />, containerRef.current);
+function findDmChannelByUserId(userId: string) {
+    return ChannelStore.getSortedPrivateChannels().find(ch => ch.isDM() && ch.recipients!.includes(userId));
 }
 
 function createBubbleFromChannel(channelId: string, userId?: string) {
@@ -214,8 +208,8 @@ function createBubbleFromChannel(channelId: string, userId?: string) {
     let avatarUrl = "";
     let name = "";
 
-    if (channel.type === ChannelType.DM) {
-        const recipientId = userId || channel.recipients?.[0];
+    if (channel.isDM()) {
+        const recipientId = userId || channel.recipients![0];
         if (recipientId) {
             const recipient = UserStore.getUser(recipientId);
             if (recipient) {
@@ -225,7 +219,7 @@ function createBubbleFromChannel(channelId: string, userId?: string) {
                 name = `User ${recipientId}`;
             }
         }
-    } else if (channel.type === ChannelType.GROUP_DM) {
+    } else if (channel.isGroupDM()) {
         name = channel.name || "Group DM";
         if (channel.icon) {
             avatarUrl = `https://cdn.discordapp.com/channel-icons/${channel.id}/${channel.icon}.png`;
@@ -284,10 +278,10 @@ export default definePlugin({
                 });
             } else if (settings.store.autoCreateBubbles) {
                 const channel = ChannelStore.getChannel(message.channel_id);
-                if (!channel || channel.type !== ChannelType.DM) return;
+                if (!channel || !channel.isDM()) return;
 
-                const currentUserId = UserStore.getCurrentUser()?.id;
-                if (!currentUserId || message.author.id === currentUserId) return;
+                const { id: currentUserId } = UserStore.getCurrentUser();
+                if (message.author.id === currentUserId) return;
 
                 if (bubbles.length >= settings.store.maxBubbles) return;
 
@@ -325,14 +319,15 @@ export default definePlugin({
 
     contextMenus: {
         "channel-context": (children, { channel }) => {
-            if (!channel) return;
+            const manager = bubbleManager;
+            if (!channel || !manager) return;
 
             const menuChildren = Array.isArray(children) ? children : [children];
 
-            const existingBubble = bubbleManager?.getBubbles().find(b => b.channelId === channel.id);
+            const existingBubble = manager.getBubbles().find(b => b.channelId === channel.id);
             const label = existingBubble ? "Remove Chat Bubble" : "Create Chat Bubble";
             const action = existingBubble
-                ? () => bubbleManager?.removeBubble(existingBubble.id)
+                ? () => manager.removeBubble(existingBubble.id)
                 : () => createBubbleFromChannel(channel.id);
 
             menuChildren.push(
@@ -345,14 +340,14 @@ export default definePlugin({
         },
 
         "user-context": (children, { user }) => {
-            if (!user) return;
+            const manager = bubbleManager;
+            if (!user || !manager) return;
 
             const menuChildren = Array.isArray(children) ? children : [children];
 
-            const dmChannel = ChannelStore.getSortedPrivateChannels()
-                .find(ch => ch.type === ChannelType.DM && ch.recipients?.includes(user.id));
+            const dmChannel = findDmChannelByUserId(user.id);
             const existingBubble = dmChannel
-                ? bubbleManager?.getBubbles().find(b => b.channelId === dmChannel.id)
+                ? manager.getBubbles().find(b => b.channelId === dmChannel.id)
                 : null;
             const label = existingBubble ? "Remove Chat Bubble" : "Create Chat Bubble";
 
@@ -362,12 +357,11 @@ export default definePlugin({
                     label={label}
                     action={async () => {
                         if (existingBubble) {
-                            bubbleManager?.removeBubble(existingBubble.id);
+                            manager.removeBubble(existingBubble.id);
                             return;
                         }
 
-                        const dmChan = ChannelStore.getSortedPrivateChannels()
-                            .find(ch => ch.type === ChannelType.DM && ch.recipients?.includes(user.id));
+                        const dmChan = findDmChannelByUserId(user.id);
 
                         if (!dmChan) {
                             let channelId = ChannelStore.getDMFromUserId(user.id);
@@ -379,19 +373,10 @@ export default definePlugin({
                                     });
                                     channelId = response.body.id;
                                     if (!channelId) return;
-
-                                    await new Promise(resolve => setTimeout(resolve, 100));
-
-                                    let retries = 0;
-                                    while (!ChannelStore.getChannel(channelId) && retries < 10) {
-                                        await new Promise(resolve => setTimeout(resolve, 50));
-                                        retries++;
-                                    }
                                 } catch {
                                     return;
                                 }
                             }
-                            if (!channelId) return;
                             createBubbleFromChannel(channelId, user.id);
                         } else {
                             createBubbleFromChannel(dmChan.id, user.id);
@@ -416,7 +401,6 @@ export default definePlugin({
         autoCreateTimeouts.forEach(id => clearTimeout(id));
         autoCreateTimeouts = [];
         bubbleManager = null;
-        document.getElementById("vc-chatbubble-root")?.remove();
     },
 
     renderBubbleLayer() {

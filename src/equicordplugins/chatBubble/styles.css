@@ -143,11 +143,8 @@
     box-shadow: 0 8px 24px rgb(0 0 0 / 50%);
     pointer-events: auto;
     z-index: calc(var(--vc-chatbubble-layer) + 1);
-    opacity: 1;
-    animation: none;
-    will-change: transform, opacity;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: box-shadow 0.2s ease;
 }
 
 .vc-chatbubble-message-preview:hover {
@@ -175,6 +172,7 @@
 .vc-chatbubble-chat-window {
     position: fixed;
     resize: both;
+    overflow: hidden;
     min-width: 280px;
     min-height: 300px;
     max-width: 90vw;

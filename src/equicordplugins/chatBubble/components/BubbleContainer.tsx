@@ -9,7 +9,6 @@ import { classNameFactory } from "@utils/css";
 import { React, useCallback, useState } from "@webpack/common";
 
 import type { BubblePosition, BubbleSettings, ChatBubbleData, MessagePreview as MessagePreviewData } from "../types";
-import { getScreenBounds, isInTrashZone } from "../utils/positioning";
 import { AnchoredBubble } from "./AnchoredBubble";
 import { TrashZone } from "./TrashZone";
 
@@ -31,20 +30,26 @@ export const BubbleContainer = ErrorBoundary.wrap(
         const [livePositions, setLivePositions] = useState<Record<string, BubblePosition>>({});
         const [lastSeenPreviews, setLastSeenPreviews] = useState<Record<string, MessagePreviewData>>({});
 
-        const trashZoneY = getScreenBounds().height - 100;
+        const trashZoneY = window.innerHeight - 100;
         const magnetRadius = 75;
 
         React.useEffect(() => {
-            messagePreviews.forEach(preview => {
-                setLastSeenPreviews(prev => {
-                    if (prev[preview.bubbleId]?.timestamp === preview.timestamp) {
-                        return prev;
+            setLastSeenPreviews(prev => {
+                let next = prev;
+
+                for (const preview of messagePreviews) {
+                    if (next[preview.bubbleId]?.timestamp === preview.timestamp) {
+                        continue;
                     }
-                    return {
-                        ...prev,
-                        [preview.bubbleId]: preview
-                    };
-                });
+
+                    if (next === prev) {
+                        next = { ...prev };
+                    }
+
+                    next[preview.bubbleId] = preview;
+                }
+
+                return next;
             });
         }, [messagePreviews]);
 
@@ -59,31 +64,32 @@ export const BubbleContainer = ErrorBoundary.wrap(
             }));
         }, []);
 
-        const handleDragEnd = useCallback((
-            bubbleId: string,
-            position: BubblePosition
-        ) => {
-            setIsDragging(false);
-
-            if (settings.enableTrashZone && isInTrashZone(position, trashZoneY, magnetRadius)) {
-                removeBubble(bubbleId);
-                setLivePositions(prev => {
-                    if (!prev[bubbleId]) return prev;
-                    const next = { ...prev };
-                    delete next[bubbleId];
-                    return next;
-                });
-                return;
-            }
-
-            updateBubble(bubbleId, { position });
+        const clearLivePosition = useCallback((bubbleId: string) => {
             setLivePositions(prev => {
                 if (!prev[bubbleId]) return prev;
                 const next = { ...prev };
                 delete next[bubbleId];
                 return next;
             });
-        }, [settings, removeBubble, updateBubble, trashZoneY, magnetRadius]);
+        }, []);
+
+        const handleDragEnd = useCallback((
+            bubbleId: string,
+            position: BubblePosition
+        ) => {
+            setIsDragging(false);
+            const centerX = window.innerWidth / 2;
+            const distanceToTrashZone = Math.hypot(position.x - centerX, position.y - trashZoneY);
+
+            if (settings.enableTrashZone && distanceToTrashZone < magnetRadius) {
+                removeBubble(bubbleId);
+                clearLivePosition(bubbleId);
+                return;
+            }
+
+            updateBubble(bubbleId, { position });
+            clearLivePosition(bubbleId);
+        }, [settings, removeBubble, updateBubble, trashZoneY, magnetRadius, clearLivePosition]);
 
         const handleBubbleClick = useCallback((bubbleId: string) => {
             setActiveChatBubbleId(prev => prev === bubbleId ? null : bubbleId);
@@ -125,12 +131,12 @@ export const BubbleContainer = ErrorBoundary.wrap(
                             isChatOpen={isChatOpen}
                             enableAnimations={settings.enableAnimations}
                             onBubbleClick={() => handleBubbleClick(bubble.id)}
-                            onBubbleHover={(hovered) => handleBubbleHover(bubble.id, hovered)}
+                            onBubbleHover={hovered => handleBubbleHover(bubble.id, hovered)}
                             onDragStart={handleDragStart}
-                            onDragEnd={(pos) => handleDragEnd(bubble.id, pos)}
+                            onDragEnd={pos => handleDragEnd(bubble.id, pos)}
                             onDragMove={pos => handleDragMove(bubble.id, pos)}
                             onPreviewClick={() => handlePreviewClick(bubble.id)}
-                            onWindowResize={(size) => handleWindowResize(bubble.id, size)}
+                            onWindowResize={size => handleWindowResize(bubble.id, size)}
                             bubbleSize={settings.bubbleSize}
                         />
                     );

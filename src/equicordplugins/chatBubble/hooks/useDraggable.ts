@@ -7,9 +7,19 @@
 import { useCallback, useEffect, useRef, useState } from "@webpack/common";
 
 import type { BubblePosition, BubbleVelocity, DragState } from "../types";
-import { calculateVelocity } from "../utils/physics";
 
 const DRAG_THRESHOLD = 5;
+
+function calculateVelocity(prevPos: BubblePosition, currentPos: BubblePosition, deltaTime: number): BubbleVelocity {
+    if (deltaTime <= 0) {
+        return { vx: 0, vy: 0 };
+    }
+
+    return {
+        vx: (currentPos.x - prevPos.x) / deltaTime,
+        vy: (currentPos.y - prevPos.y) / deltaTime
+    };
+}
 
 export function useDraggable(
     initialPosition: BubblePosition,

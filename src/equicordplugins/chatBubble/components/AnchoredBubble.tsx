@@ -49,7 +49,7 @@ function AnchoredBubbleComponent({
     const anchorPosition = livePosition ?? bubble.position;
     const [isClosing, setIsClosing] = React.useState(false);
     const [shouldRender, setShouldRender] = React.useState(false);
-    const timeoutRef = React.useRef<number>();
+    const timeoutRef = React.useRef<number | null>(null);
 
     React.useEffect(() => {
         if (isChatOpen && bubble.channelId) {
@@ -61,9 +61,9 @@ function AnchoredBubbleComponent({
     }, [isChatOpen, bubble.channelId]);
 
     React.useEffect(() => {
-        if (timeoutRef.current) {
+        if (timeoutRef.current !== null) {
             clearTimeout(timeoutRef.current);
-            timeoutRef.current = undefined;
+            timeoutRef.current = null;
         }
 
         if (isChatOpen) {
@@ -75,7 +75,7 @@ function AnchoredBubbleComponent({
                 timeoutRef.current = window.setTimeout(() => {
                     setShouldRender(false);
                     setIsClosing(false);
-                    timeoutRef.current = undefined;
+                    timeoutRef.current = null;
                 }, 120);
             } else {
                 setShouldRender(false);
@@ -84,8 +84,9 @@ function AnchoredBubbleComponent({
         }
 
         return () => {
-            if (timeoutRef.current) {
+            if (timeoutRef.current !== null) {
                 clearTimeout(timeoutRef.current);
+                timeoutRef.current = null;
             }
         };
     }, [isChatOpen, shouldRender, enableAnimations]);

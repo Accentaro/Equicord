@@ -7,8 +7,8 @@
 import ErrorBoundary from "@components/ErrorBoundary";
 import { classNameFactory } from "@utils/css";
 import { classes } from "@utils/misc";
-import { findByCodeLazy, findComponentByCodeLazy, findCssClassesLazy, findByPropsLazy } from "@webpack";
-import { Avatar, ChannelStore, GuildStore, MessageActions, MessageStore, React, ScrollerThin, UserStore, useStateFromStores } from "@webpack/common";
+import { findByCodeLazy, findByPropsLazy, findComponentByCodeLazy, findCssClassesLazy } from "@webpack";
+import { Avatar, ChannelStore, GuildStore, MessageActions, MessageStore, React, ScrollerThin, useStateFromStores } from "@webpack/common";
 
 import type { ChatBubbleData } from "../types";
 
@@ -30,7 +30,6 @@ interface ChatWindowProps {
 function ChatWindowComponent({ bubble, position, bubbleSize, onSizeChange, isClosing }: ChatWindowProps) {
     const windowRef = React.useRef<HTMLDivElement>(null);
     const bottomRef = React.useRef<HTMLDivElement>(null);
-    const messagesRef = React.useRef<HTMLDivElement>(null);
     const channel = ChannelStore.getChannel(bubble.channelId);
     React.useEffect(() => {
         if (!MessageStore.hasPresent(bubble.channelId)) {
@@ -44,12 +43,7 @@ function ChatWindowComponent({ bubble, position, bubbleSize, onSizeChange, isClo
     }, [bubble.channelId]);
 
     const scrollToBottom = React.useCallback(() => {
-        if (messagesRef.current) {
-            const scroller = messagesRef.current.querySelector('[class*="scroller"]');
-            if (scroller) {
-                scroller.scrollTop = scroller.scrollHeight;
-            }
-        }
+        bottomRef.current?.scrollIntoView({ block: "end" });
     }, []);
 
     React.useEffect(() => {
@@ -62,28 +56,40 @@ function ChatWindowComponent({ bubble, position, bubbleSize, onSizeChange, isClo
     }, [scrollToBottom]);
 
     React.useEffect(() => {
-        if (!windowRef.current) return;
-        const observer = new ResizeObserver(entries => {
-            const { width, height } = entries[0].contentRect;
-            if (width && height) {
-                onSizeChange({ width, height });
-            }
-        });
-        observer.observe(windowRef.current);
-        return () => observer.disconnect();
+        let currentWidth = 0;
+        let currentHeight = 0;
+
+        const syncSize = () => {
+            if (!windowRef.current) return;
+
+            const { width, height } = windowRef.current.getBoundingClientRect();
+            const nextWidth = Math.round(width);
+            const nextHeight = Math.round(height);
+
+            if (!nextWidth || !nextHeight) return;
+            if (nextWidth === currentWidth && nextHeight === currentHeight) return;
+
+            currentWidth = nextWidth;
+            currentHeight = nextHeight;
+            onSizeChange({ width: nextWidth, height: nextHeight });
+        };
+
+        syncSize();
+        window.addEventListener("pointerup", syncSize);
+        return () => window.removeEventListener("pointerup", syncSize);
     }, [onSizeChange]);
 
     if (!channel) return null;
 
-    const guild = channel?.guild_id ? GuildStore.getGuild(channel.guild_id) : undefined;
+    const guild = channel.guild_id ? GuildStore.getGuild(channel.guild_id) : undefined;
 
     const dummyChannel = React.useMemo(() =>
         new ChannelRecord({
             id: bubble.channelId,
             guild_id: bubble.guildId,
-            type: channel?.type ?? 1
+            type: channel.type
         }),
-        [bubble.channelId, bubble.guildId, channel?.type]
+        [bubble.channelId, bubble.guildId, channel.type]
     );
 
     const windowWidth = bubble.windowSize?.width ?? 360;
@@ -123,7 +129,7 @@ function ChatWindowComponent({ bubble, position, bubbleSize, onSizeChange, isClo
                 <span className={cl("chat-window-name")}>{bubble.name}</span>
             </div>
 
-            <div ref={messagesRef} className={cl("chat-window-messages")}>
+            <div className={cl("chat-window-messages")}>
                 {messages.length > 0 ? (
                     <ScrollerThin className={cl("chat-window-scroller")}>
                         {messages.map(msg => (

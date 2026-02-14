@@ -4,10 +4,12 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
+import { DataStore } from "@api/index";
 import { useCallback, useEffect, useRef, useState } from "@webpack/common";
 
 import type { ChatBubbleData, MessagePreview } from "../types";
-import { loadBubbles, saveBubbles } from "../utils/storage";
+
+const STORAGE_KEY = "chatBubble_activeBubbles";
 
 export function useBubbleState() {
     const [bubbles, setBubbles] = useState<ChatBubbleData[]>([]);
@@ -16,15 +18,15 @@ export function useBubbleState() {
     const previewTimeoutsRef = useRef<number[]>([]);
 
     useEffect(() => {
-        loadBubbles().then(stored => {
-            setBubbles(stored);
+        DataStore.get(STORAGE_KEY).then(stored => {
+            setBubbles(stored ?? []);
             setIsLoading(false);
         });
     }, []);
 
     useEffect(() => {
         if (!isLoading) {
-            saveBubbles(bubbles);
+            DataStore.set(STORAGE_KEY, bubbles);
         }
     }, [bubbles, isLoading]);
 
