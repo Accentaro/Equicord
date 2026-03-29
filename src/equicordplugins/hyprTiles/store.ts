@@ -9,8 +9,8 @@ import { proxyLazy } from "@utils/lazy";
 import { FluxStore } from "@vencord/discord-types";
 import { Flux as FluxWP, FluxDispatcher } from "@webpack/common";
 
-import { computeLayoutRects, findDirectionalCandidate, findLeafByTileId, getLeafIds } from "./layout";
-import { buildRuleContext, evaluateRules, getAutoLayoutForTileCount } from "./rules";
+import { computeLayoutRects, findDirectionalCandidate, findLeafByTileId, getLeafIds } from "./utils/layout";
+import { buildRuleContext, evaluateRules, getAutoLayoutForTileCount } from "./utils/rules";
 import { settings } from "./settings";
 import {
     Direction,

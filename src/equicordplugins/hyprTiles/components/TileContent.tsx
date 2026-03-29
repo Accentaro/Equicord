@@ -23,7 +23,7 @@ import {
     useStateFromStores,
 } from "@webpack/common";
 
-import { TileEntity } from "./types";
+import { TileEntity } from "../types";
 
 const cl = classNameFactory("vc-hyprtiles-");
 

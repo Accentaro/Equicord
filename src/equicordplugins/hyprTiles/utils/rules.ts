@@ -8,8 +8,8 @@ import { PluginNative } from "@utils/types";
 import { ChannelType } from "@vencord/discord-types/enums";
 import { ChannelStore, GuildStore, RelationshipStore, UserStore } from "@webpack/common";
 
+import { settings } from "../settings";
 import { defaultRulesTemplate } from "./rulesTemplate";
-import { settings } from "./settings";
 import {
     AutoLayoutRule,
     HyprTilesChannelKind,
@@ -25,10 +25,10 @@ import {
     TileOpenPlan,
     TileTarget,
     WorkspaceIndex,
-} from "./types";
+} from "../types";
 
 const Native = IS_DISCORD_DESKTOP
-    ? VencordNative.pluginHelpers.HyprTiles as PluginNative<typeof import("./native")>
+    ? VencordNative.pluginHelpers.HyprTiles as PluginNative<typeof import("../native")>
     : null;
 
 const DEFAULT_AUTO_LAYOUTS: AutoLayoutRule[] = [

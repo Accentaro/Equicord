@@ -10,9 +10,9 @@ import { Switch } from "@components/Switch";
 import { OptionType, PluginNative } from "@utils/types";
 import { Button, React, showToast, Toasts, useState } from "@webpack/common";
 
-import { KeybindEditor } from "./KeybindEditor";
-import { actionLabels, allActions, defaultKeybinds, getKeybindSettingKey, HyprTilesKeybindSetting } from "./keybinds";
-import { defaultRulesTemplate } from "./rulesTemplate";
+import { KeybindEditor } from "./components/KeybindEditor";
+import { actionLabels, allActions, defaultKeybinds, getKeybindSettingKey, HyprTilesKeybindSetting } from "./utils/keybinds";
+import { defaultRulesTemplate } from "./utils/rulesTemplate";
 
 const Native = IS_DISCORD_DESKTOP
     ? VencordNative.pluginHelpers.HyprTiles as PluginNative<typeof import("./native")>

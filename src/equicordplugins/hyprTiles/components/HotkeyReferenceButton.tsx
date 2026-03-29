@@ -10,8 +10,8 @@ import ErrorBoundary from "@components/ErrorBoundary";
 import { classNameFactory } from "@utils/css";
 import { Popout, React, useState } from "@webpack/common";
 
-import { actionLabels, getKeybindSettingKey, hotkeySections, HyprTilesAction } from "./keybinds";
-import { settings } from "./settings";
+import { settings } from "../settings";
+import { actionLabels, getKeybindSettingKey, hotkeySections, HyprTilesAction } from "../utils/keybinds";
 
 const cl = classNameFactory("vc-hyprtiles-");
 

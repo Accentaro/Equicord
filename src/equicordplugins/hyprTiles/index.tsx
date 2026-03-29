@@ -28,13 +28,13 @@ import {
     toggleAutoLayoutMode,
     toggleScratchpadById,
 } from "./controller";
-import { HotkeyReferenceButton } from "./HotkeyReferenceButton";
+import { HotkeyReferenceButton } from "./components/HotkeyReferenceButton";
 import { settings } from "./settings";
 import { HyprTilesStore, initializeHyprTilesStore } from "./store";
-import managedStyle from "./style.css?managed";
+import managedStyle from "./styles.css?managed";
 import { RouteRenderPropsLike } from "./types";
-import { WorkspaceHost } from "./WorkspaceHost";
-import { WorkspaceSwitcherButton } from "./WorkspaceSwitcherButton";
+import { WorkspaceHost } from "./components/WorkspaceHost";
+import { WorkspaceSwitcherButton } from "./components/WorkspaceSwitcherButton";
 
 type ContextMenuChildren = Array<React.ReactElement<object> | null | undefined>;
 const cl = classNameFactory("vc-hyprtiles-");

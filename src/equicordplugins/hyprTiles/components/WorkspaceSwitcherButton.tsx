@@ -11,10 +11,10 @@ import { classes } from "@utils/misc";
 import { findExportedComponentLazy } from "@webpack";
 import { React, useStateFromStores } from "@webpack/common";
 
-import { switchWorkspaceAndNavigate } from "./controller";
-import { settings } from "./settings";
-import { HyprTilesStore } from "./store";
-import { WorkspaceIndex } from "./types";
+import { switchWorkspaceAndNavigate } from "../controller";
+import { settings } from "../settings";
+import { HyprTilesStore } from "../store";
+import { WorkspaceIndex } from "../types";
 
 const cl = classNameFactory("vc-hyprtiles-");
 const HomeIcon = findExportedComponentLazy("HomeIcon") as React.ComponentType<Record<string, unknown>>;

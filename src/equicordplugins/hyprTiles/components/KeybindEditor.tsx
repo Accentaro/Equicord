@@ -7,8 +7,8 @@
 import { classNameFactory } from "@utils/css";
 import { React, Select, useEffect, useState } from "@webpack/common";
 
-import { actionLabels, defaultKeybinds, getKeybindSettingKey, hotkeySections, HyprTilesAction } from "./keybinds";
-import { settings } from "./settings";
+import { settings } from "../settings";
+import { actionLabels, defaultKeybinds, getKeybindSettingKey, hotkeySections, HyprTilesAction } from "../utils/keybinds";
 
 const cl = classNameFactory("vc-hyprtiles-");
 const actionOptions = hotkeySections.flatMap(section => section.actions.map(action => ({

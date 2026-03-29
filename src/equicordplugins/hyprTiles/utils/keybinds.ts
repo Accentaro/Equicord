@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-import { WorkspaceIndex } from "./types";
+import { WorkspaceIndex } from "../types";
 
 type WorkspaceSwitchAction = `workspace${WorkspaceIndex}`;
 type MoveToWorkspaceAction = `moveToWorkspace${WorkspaceIndex}`;

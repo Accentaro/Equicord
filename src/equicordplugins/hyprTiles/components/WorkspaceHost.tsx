@@ -17,12 +17,12 @@ import {
     moveTileByDropAndNavigate,
     switchWorkspaceAndNavigate,
     syncRouteTarget,
-} from "./controller";
-import { computeLayoutRects, findResizableSplit, getLeafIds } from "./layout";
-import { settings } from "./settings";
-import { getPinnedTiles, getVisibleScratchpads, HyprTilesStore, isWorkspaceOverviewOpen, toggleWorkspaceOverview, updateSplitRatio, updateTileFloatBounds } from "./store";
+} from "../controller";
+import { settings } from "../settings";
+import { getPinnedTiles, getVisibleScratchpads, HyprTilesStore, isWorkspaceOverviewOpen, toggleWorkspaceOverview, updateSplitRatio, updateTileFloatBounds } from "../store";
+import { computeLayoutRects, findResizableSplit, getLeafIds } from "../utils/layout";
 import { TileContent } from "./TileContent";
-import { DropZone, FloatBounds, TileEntity, TileTarget } from "./types";
+import { DropZone, FloatBounds, TileEntity, TileTarget } from "../types";
 
 const cl = classNameFactory("vc-hyprtiles-");
 const DROP_CENTER_RATIO = 0.32;

@@ -18,8 +18,8 @@ import {
     UserStore,
 } from "@webpack/common";
 
-import { allActions, getKeybindSettingKey, HyprTilesAction, isEditableTarget, matchesKeybind, workspaceIndices } from "./keybinds";
-import { reloadRulesConfig } from "./rules";
+import { allActions, getKeybindSettingKey, HyprTilesAction, isEditableTarget, matchesKeybind, workspaceIndices } from "./utils/keybinds";
+import { reloadRulesConfig } from "./utils/rules";
 import { settings } from "./settings";
 import {
     adjustActiveWorkspaceMasterRatio,

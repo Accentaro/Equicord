@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-import { Direction, LayoutLeafNode, LayoutRects, LayoutSplitNode, Rect, ResizeEdge, WorkspaceNode, WorkspaceState } from "./types";
+import { Direction, LayoutLeafNode, LayoutRects, LayoutSplitNode, Rect, ResizeEdge, WorkspaceNode, WorkspaceState } from "../types";
 
 const EMPTY_LAYOUT: LayoutRects = {
     orderedIds: [],
