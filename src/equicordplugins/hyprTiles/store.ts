@@ -88,6 +88,10 @@ const createDefaultState = (): HyprTilesPersistedState => ({
 });
 
 const getLayoutSettingsKey = () => `${settings.store.defaultLayout}:${settings.store.enableRulesFile ? 1 : 0}`;
+const getLayoutFromSettingsKey = (value: string) => {
+    const [layout] = value.split(":");
+    return MANUAL_LAYOUTS.includes(layout as ManualHyprTilesLayout) ? layout as ManualHyprTilesLayout : null;
+};
 
 function normalizeWorkspaceId(value: unknown): WorkspaceIndex | null {
     const workspaceId = Number(value);
@@ -401,6 +405,7 @@ function normalizeWorkspaceRefs(workspace: WorkspaceState, currentState: HyprTil
 function syncWorkspaceLayoutsToSettings(currentState: HyprTilesPersistedState = state) {
     let changed = false;
     const fallbackLayout = defaultLayout();
+    const previousFallbackLayout = getLayoutFromSettingsKey(appliedLayoutSettingsKey);
 
     for (const workspaceId of WORKSPACE_IDS) {
         const workspace = currentState.workspaces[String(workspaceId)];
@@ -414,6 +419,13 @@ function syncWorkspaceLayoutsToSettings(currentState: HyprTilesPersistedState = 
                 rebuildWorkspaceTree(workspace, nextLayout);
                 changed = true;
             }
+            continue;
+        }
+
+        if (previousFallbackLayout && workspace.layout === previousFallbackLayout && workspace.layout !== fallbackLayout) {
+            workspace.layout = fallbackLayout;
+            if (tiledLeafCount) rebuildWorkspaceTree(workspace, fallbackLayout);
+            changed = true;
             continue;
         }
 

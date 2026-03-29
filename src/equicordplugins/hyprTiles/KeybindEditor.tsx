@@ -5,12 +5,16 @@
  */
 
 import { classNameFactory } from "@utils/css";
-import { React, useEffect, useState } from "@webpack/common";
+import { React, Select, useEffect, useState } from "@webpack/common";
 
 import { actionLabels, defaultKeybinds, getKeybindSettingKey, hotkeySections, HyprTilesAction } from "./keybinds";
 import { settings } from "./settings";
 
 const cl = classNameFactory("vc-hyprtiles-");
+const actionOptions = hotkeySections.flatMap(section => section.actions.map(action => ({
+    label: actionLabels[action],
+    value: action
+})));
 
 function buildKeybindString(e: KeyboardEvent): string | null {
     if (["Control", "Alt", "Shift", "Meta"].includes(e.key)) return null;
@@ -60,21 +64,14 @@ export function KeybindEditor() {
 
     return (
         <div className={cl("keybind-editor")}>
-            <select
-                className={cl("keybind-action-select")}
-                value={selectedAction}
-                onChange={e => setSelectedAction(e.currentTarget.value as HyprTilesAction)}
-            >
-                {hotkeySections.map(section => (
-                    <optgroup key={section.label} label={section.label}>
-                        {section.actions.map(action => (
-                            <option key={action} value={action}>
-                                {actionLabels[action]}
-                            </option>
-                        ))}
-                    </optgroup>
-                ))}
-            </select>
+            <div className={cl("keybind-action-select")}>
+                <Select
+                    options={actionOptions}
+                    isSelected={value => value === selectedAction}
+                    select={value => setSelectedAction(value)}
+                    serialize={value => value}
+                />
+            </div>
 
             <div className={cl("keybind-controls")}>
                 <span className={cl(recording ? "keybind-recording" : "keybind-display")}>

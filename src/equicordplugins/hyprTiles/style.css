@@ -39,23 +39,37 @@
     width: 28px;
     height: 28px;
     padding: 0;
-    border: 1px solid var(--background-modifier-accent);
+    border: 1px solid transparent;
     border-radius: 8px;
-    background: var(--background-secondary);
-    color: var(--text-muted);
+    background: transparent !important;
+    background-color: transparent !important;
+    color: var(--interactive-text-default, var(--text-normal)) !important;
+    -webkit-text-fill-color: var(--interactive-text-default, var(--text-normal)) !important;
     cursor: pointer;
     transition: border-color 140ms ease, background-color 140ms ease, color 140ms ease;
 }
 
-.vc-hyprtiles-ws-btn:hover {
-    color: var(--text-normal);
-    border-color: var(--brand-500, var(--text-link));
+.vc-hyprtiles-ws-btn:hover,
+.vc-hyprtiles-ws-btn:focus-visible {
+    background: var(--interactive-background-hover, var(--background-secondary-alt)) !important;
+    background-color: var(--interactive-background-hover, var(--background-secondary-alt)) !important;
+    color: var(--interactive-text-default, var(--text-normal)) !important;
+    -webkit-text-fill-color: var(--interactive-text-default, var(--text-normal)) !important;
+    border-color: var(--border-subtle, var(--background-modifier-accent)) !important;
 }
 
 .vc-hyprtiles-ws-btn-active {
-    background: var(--background-modifier-selected);
-    color: var(--text-normal);
-    border-color: var(--brand-500, var(--text-link));
+    background: var(--background-secondary-alt) !important;
+    background-color: var(--background-secondary-alt) !important;
+    color: var(--interactive-text-default, var(--text-normal)) !important;
+    -webkit-text-fill-color: var(--interactive-text-default, var(--text-normal)) !important;
+    border-color: var(--brand-500, var(--text-link)) !important;
+}
+
+.vc-hyprtiles-ws-btn-active:hover,
+.vc-hyprtiles-ws-btn-active:focus-visible {
+    background: var(--background-secondary-alt) !important;
+    background-color: var(--background-secondary-alt) !important;
 }
 
 .vc-hyprtiles-hotkey-popout {
@@ -150,8 +164,8 @@
     white-space: normal;
     overflow-wrap: anywhere;
     line-height: 1.25;
-    color: inherit !important;
-    -webkit-text-fill-color: currentcolor;
+    color: var(--interactive-text-default, var(--text-normal)) !important;
+    -webkit-text-fill-color: var(--interactive-text-default, var(--text-normal)) !important;
     opacity: 1;
 }
 
@@ -171,7 +185,7 @@
     min-width: 0;
     min-height: 0;
     overflow: hidden;
-    border: 1px solid var(--background-modifier-accent);
+    border: 1px solid var(--border-subtle, var(--background-modifier-accent));
     border-radius: 10px;
     background: var(--background-primary);
 }
@@ -192,7 +206,7 @@
 }
 
 .vc-hyprtiles-tile-unfocused {
-    border-color: var(--background-modifier-accent);
+    border-color: var(--border-subtle, var(--background-modifier-accent));
 }
 
 .vc-hyprtiles-tile-live-bounds {
@@ -556,56 +570,44 @@
 .vc-hyprtiles-keybind-editor {
     display: flex;
     align-items: stretch;
-    height: 32px;
     gap: 8px;
     width: 100%;
+    flex-wrap: wrap;
 }
 
 .vc-hyprtiles-keybind-action-select {
-    flex: 1 1 0;
+    flex: 1 1 260px;
     min-width: 0;
-    height: 100%;
-    box-sizing: border-box;
-    margin: 0;
-    padding: 0 10px;
-    appearance: none;
-    background: var(--input-background);
-    color: var(--text-normal);
-    border: 1px solid var(--background-modifier-accent);
-    border-radius: 4px;
-    font-size: 14px;
-    cursor: pointer;
-}
-
-.vc-hyprtiles-keybind-action-select:focus {
-    outline: none;
-    border-color: var(--brand-500, var(--text-link));
 }
 
 .vc-hyprtiles-keybind-controls {
     display: flex;
     align-items: stretch;
     gap: 0;
-    flex-shrink: 0;
-    height: 100%;
+    flex: 1 1 320px;
+    min-height: 40px;
     box-sizing: border-box;
     border: 1px solid var(--background-modifier-accent);
-    border-radius: 4px;
+    border-radius: 8px;
     overflow: hidden;
+    background: var(--input-background);
 }
 
 .vc-hyprtiles-keybind-display,
 .vc-hyprtiles-keybind-recording {
     display: flex;
     align-items: center;
-    justify-content: center;
-    min-width: 160px;
+    justify-content: flex-start;
+    flex: 1 1 auto;
+    min-width: 0;
     box-sizing: border-box;
     padding: 0 12px;
     font-family: var(--font-code);
     font-size: 13px;
     white-space: nowrap;
     background: var(--input-background);
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .vc-hyprtiles-keybind-display {
@@ -634,6 +636,8 @@
 .vc-hyprtiles-keybind-reset-btn {
     display: flex;
     align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
     padding: 0 14px;
     box-sizing: border-box;
     border: none;

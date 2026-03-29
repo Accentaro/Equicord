@@ -102,6 +102,7 @@ export const settings = definePluginSettings({
     workspaceCount: {
         type: OptionType.SELECT,
         description: "Number of workspaces available.",
+        restartNeeded: true,
         options: [
             { label: "1", value: 1 },
             { label: "2", value: 2 },
@@ -109,6 +110,9 @@ export const settings = definePluginSettings({
             { label: "4", value: 4, default: true },
             { label: "5", value: 5 },
             { label: "6", value: 6 },
+            { label: "7", value: 7 },
+            { label: "8", value: 8 },
+            { label: "9", value: 9 },
         ]
     },
     restoreWorkspaceOnReload: {
