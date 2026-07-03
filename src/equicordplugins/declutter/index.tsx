@@ -7,7 +7,7 @@
 import "./style.css";
 
 import { isPluginEnabled } from "@api/PluginManager";
-import { definePluginSettings, migrateOldSettingToNewPlugin, migratePluginSetting, migratePluginSettings } from "@api/Settings";
+import { definePluginSettings, migratePluginSetting } from "@api/Settings";
 import { Divider } from "@components/Divider";
 import { HeadingSecondary } from "@components/Heading";
 import { Notice } from "@components/Notice";
@@ -17,21 +17,8 @@ import { Devs, EquicordDevs } from "@utils/index";
 import definePlugin, { OptionType } from "@utils/types";
 import { Alerts } from "@webpack/common";
 
-migratePluginSettings("Declutter", "BetterUserArea", "Anammox");
-migrateOldSettingToNewPlugin("Declutter", "removeClanTag", "GuildTagSettings", "hideTags");
-
-const migrationsAnammox = [
-    ["dms", "removeShopAboveDM"],
-    ["quests", "removeQuestsAboveDM"],
-    ["serverBoost", "removeServerBoostInfo"],
-    ["billing", "removeBillingSettings"],
-    ["gift", "removeGiftButton"],
-    ["emojiList", "removeUnavailableEmojiPicker"],
-];
-
-for (const [oldKey, newKey] of migrationsAnammox) {
-    migratePluginSetting("Declutter", newKey, oldKey);
-}
+migratePluginSetting("Declutter", "removeShopAboveDms", "removeShopAboveDM");
+migratePluginSetting("Declutter", "removeQuestsAboveDms", "removeQuestsAboveDM");
 
 const cl = classNameFactory("vc-declutter-");
 
@@ -83,13 +70,13 @@ export const settings = definePluginSettings({
         type: OptionType.COMPONENT,
         component: () => SectionSeparator("Above Friends/DMs List"),
     },
-    removeShopAboveDM: {
+    removeShopAboveDms: {
         type: OptionType.BOOLEAN,
         description: "Remove shops above DMs list.",
         default: false,
         restartNeeded: true,
     },
-    removeQuestsAboveDM: {
+    removeQuestsAboveDms: {
         type: OptionType.BOOLEAN,
         description: "Remove quests above DMs list.",
         default: false,
@@ -160,7 +147,6 @@ export default definePlugin({
                 title: "Declutter",
                 body: "Avatar decoration removal has been disabled to prevent conflicts with Decor plugin.",
                 confirmText: "OK",
-                // @ts-expect-error not typed
                 confirmVariant: "critical-primary"
             });
         }
@@ -185,6 +171,27 @@ export default definePlugin({
             },
             predicate: () => settings.store.removeAvatarDecoration && !isPluginEnabled(decor.name),
         },
+        // User Area
+        {
+            find: "#{intl::USER_PROFILE_ACCOUNT_POPOUT_BUTTON_A11Y_LABEL}",
+            replacement: [
+                {
+                    match: /((\i)=\i\?\.avatarDecoration,\i=)\(0,\i\.\i\)\(\2\)/,
+                    replace: "$1null",
+                    predicate: () => settings.store.removeAvatarDecoration && !isPluginEnabled(decor.name),
+                },
+                {
+                    match: /(iconForeground:null!=\i\?\i\.\i:void 0,nameplate:)\i/g,
+                    replace: "$1null",
+                    predicate: () => settings.store.removeNameplate,
+                },
+                {
+                    match: /let\{ref:\i,speaking:\i,voiceDb:/,
+                    replace: "arguments[0].nameplate=null;$&",
+                    predicate: () => settings.store.removeNameplate,
+                }
+            ],
+        },
         {
             // Nameplate
             find: ".MINI_PREVIEW,[",
@@ -198,7 +205,7 @@ export default definePlugin({
             // Profile banner animation effect
             find: "bannerAdjustment,isHovering",
             replacement: {
-                match: /\i=(\i)=>\{(?=.{0,50}\.useReducedMotion\))/,
+                match: /\i=function\((\i)\)\{(?=.{0,50}\.useReducedMotion\))/,
                 replace: "$&if(!$1.shopPreview)return null;"
             },
             predicate: () => settings.store.removeProfileEffect,
@@ -214,7 +221,7 @@ export default definePlugin({
         },
         {
             // Always show username
-            find: ".DISPLAY_NAME_STYLES_COACHMARK)",
+            find: "#{intl::USER_PROFILE_ACCOUNT_POPOUT_BUTTON_A11Y_LABEL}",
             replacement: {
                 match: /hoverText:(\i),forceHover:\i,children:/g,
                 replace: "hoverText:$1,forceHover:!0,children:"
@@ -285,18 +292,18 @@ export default definePlugin({
                 {
                     match: /"nitro-tab-group"\)/,
                     replace: "$&&&undefined",
-                    predicate: () => settings.store.removeShopAboveDM,
+                    predicate: () => settings.store.removeShopAboveDms,
                 },
                 {
-                    match: /"discord-shop"\)/,
+                    match: /NAVIGATION_LINK\}\}\},"discord-shop"\)/,
                     replace: "$&&&undefined",
-                    predicate: () => settings.store.removeShopAboveDM
+                    predicate: () => settings.store.removeShopAboveDms
 
                 },
                 {
-                    match: /"quests"\)/,
+                    match: /\.QUEST_HOME\},"quests"\)/,
                     replace: "$&&&undefined",
-                    predicate: () => settings.store.removeQuestsAboveDM
+                    predicate: () => settings.store.removeQuestsAboveDms
                 },
             ],
         },
@@ -313,13 +320,13 @@ export default definePlugin({
                     replace: "/*$&*/",
                 },
             ],
-            predicate: () => settings.store.removeShopAboveDM,
+            predicate: () => settings.store.removeShopAboveDms,
         },
         {
             // Channel list server boost progress bar
             find: "useGuildActionRow",
             replacement: {
-                match: /(GUILD_NEW_MEMBER_ACTIONS_PROGRESS_BAR\)):(\i(?:\.premiumProgressBarEnabled)?)/,
+                match: /(GUILD_NEW_MEMBER_ACTIONS_PROGRESS_BAR\)):\i(?:\.premiumProgressBarEnabled)?/,
                 replace: "$1:null"
             },
             predicate: () => settings.store.removeServerBoostInfo,
@@ -328,8 +335,8 @@ export default definePlugin({
             // Billing settings
             find: ".BILLING_SECTION,",
             replacement: {
-                match: /(?<=buildLayout:\(\)=>)\[.+?\]/,
-                replace: "[]",
+                match: /(\.BILLING_SECTION.{0,50}buildLayout:\(\)=>\[).{0,15}?\]/,
+                replace: "$1]",
             },
             predicate: () => settings.store.removeBillingSettings,
         },
