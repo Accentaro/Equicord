@@ -139,6 +139,13 @@ function getErrorMessage(error: unknown) {
     return error instanceof Error ? error.message : String(error);
 }
 
+function handleStoreWriteError(action: string) {
+    return (error: unknown) => {
+        logger.error(`Failed to ${action}`, error);
+        showFailureToast(`Failed to ${action}: ${getErrorMessage(error)}`);
+    };
+}
+
 function inferMediaKind(blob: Blob): MediaKind | null {
     if (blob.type.startsWith("image/")) return "image";
     if (blob.type === "video/mp4") return "video";
@@ -247,10 +254,10 @@ function removeMedia(id: number) {
 
     URL.revokeObjectURL(media.src);
     mediaItems = mediaItems.filter(item => item.id !== id);
-    void del(id, imageStore);
+    del(id, imageStore).catch(handleStoreWriteError("delete stored background"));
 
     if (media.selected) {
-        void del(ACTIVE_ID_KEY, imageStore);
+        del(ACTIVE_ID_KEY, imageStore).catch(handleStoreWriteError("clear background selection"));
         removeBackground();
     } else {
         notifyUI();
@@ -259,13 +266,14 @@ function removeMedia(id: number) {
 
 function selectMedia(id: number) {
     const media = mediaItems.find(item => item.id === id);
-    if (!media) return;
+    // Skip when already displayed, so reselecting does not replay the crossfade.
+    if (!media || media === currentMedia) return;
 
     if (!media.selected) {
         for (const item of mediaItems) {
             item.selected = item.id === id;
         }
-        void set(ACTIVE_ID_KEY, id, imageStore);
+        set(ACTIVE_ID_KEY, id, imageStore).catch(handleStoreWriteError("save background selection"));
     }
 
     setBackground(media);
@@ -276,7 +284,7 @@ function deselectAll() {
         media.selected = false;
     });
 
-    void del(ACTIVE_ID_KEY, imageStore);
+    del(ACTIVE_ID_KEY, imageStore).catch(handleStoreWriteError("clear background selection"));
     removeBackground();
 }
 
